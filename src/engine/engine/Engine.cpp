@@ -29,7 +29,6 @@ VkPhysicalDevice getBestPhysicalDevice(VkInstance instance,
 namespace engine
 {
 Engine::Engine():
-  swapchain_(this),
   utilities_(this),
   lenaTexture_(this, std::string(RESOURCE_PATH) + "/textures/default.bmp", VK_FORMAT_R8G8B8A8_UNORM),
   model_(this)
@@ -50,7 +49,7 @@ void Engine::drawFrame()
     vkResetFences(logicalDevice_, 1, &inFlightFences_[currentFrame_]);
     // Timeout in nanoseconds = numeric_limits... using the max disable the timeout
     VkResult result = vkAcquireNextImageKHR(logicalDevice_,
-                                            swapchain_.getVkSwapchain(),
+                                            swapchainData_.swapchain,
                                             std::numeric_limits<uint64_t>::max(),
                                             imageAvailableSemaphore_[currentFrame_],
                                             VK_NULL_HANDLE,
@@ -91,7 +90,7 @@ void Engine::drawFrame()
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.pImageIndices = &imageIndex;
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapchain_.getVkSwapchain();
+    presentInfo.pSwapchains = &swapchainData_.swapchain;
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = &renderFinishedSemaphore_[currentFrame_];
     presentInfo.pResults = &presentatioResult; // Array of results for each swap chain images
@@ -371,8 +370,67 @@ void Engine::createSwapChain()
 {
     LOG_INFO("Swapchain Creation...");
 
-    swapchain_.setExtent(windowExtent_);
-    swapchain_.create();
+    SwapchainSupportDetails swapChainSupport = swapchainDetails_;
+
+    chooseSwapSurfaceFormat(swapChainSupport.surfaceFormats);
+    chooseSwapExtent(swapChainSupport.surfaceCapabilities);
+    chooseSwapPresentMode(swapChainSupport.presentModes);
+
+    uint32_t imageCount = swapChainSupport.surfaceCapabilities.minImageCount + 1;
+
+    if(swapChainSupport.surfaceCapabilities.maxImageCount > 0 &&
+       imageCount > swapChainSupport.surfaceCapabilities.maxImageCount)
+    {
+        imageCount = swapChainSupport.surfaceCapabilities.maxImageCount;
+    }
+
+    VkSwapchainCreateInfoKHR swapChainInfo = {};
+    swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    swapChainInfo.surface = surface_;
+    swapChainInfo.imageExtent = swapchainData_.extent;
+    swapChainInfo.imageFormat = swapchainData_.format.format;
+    swapChainInfo.imageColorSpace = swapchainData_.format.colorSpace;
+    swapChainInfo.presentMode = swapchainData_.presentMode;
+    swapChainInfo.minImageCount = imageCount;
+    swapChainInfo.imageArrayLayers = 1; // Number of layers in the image (different in 3d stereoscopic)
+    swapChainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    uint32_t queueFamilyIndices[] = {static_cast<uint32_t>(indices_.graphicsFamily),
+                                     static_cast<uint32_t>(indices_.presentingFamily)};
+
+    if(indices_.graphicsFamily != indices_.presentingFamily)
+    {
+        // This line provides us the benefit to share an image in the swapchain across all queue family
+        swapChainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        swapChainInfo.queueFamilyIndexCount = 2;
+        swapChainInfo.pQueueFamilyIndices = queueFamilyIndices;
+    }
+    else
+    {
+        swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        swapChainInfo.queueFamilyIndexCount = 0;
+        swapChainInfo.pQueueFamilyIndices = nullptr;
+    }
+
+    swapChainInfo.preTransform = swapChainSupport.surfaceCapabilities.currentTransform;
+    swapChainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    swapChainInfo.clipped = VK_TRUE;
+    swapChainInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    VK_CALL(vkCreateSwapchainKHR(logicalDevice_, &swapChainInfo, nullptr, &swapchainData_.swapchain));
+
+    vkGetSwapchainImagesKHR(logicalDevice_, swapchainData_.swapchain, &imageCount, nullptr);
+    swapchainData_.images.resize(imageCount);
+    vkGetSwapchainImagesKHR(logicalDevice_, swapchainData_.swapchain, &imageCount, swapchainData_.images.data());
+
+    swapchainData_.imageViews.resize(swapchainData_.images.size());
+
+    // Configure image view for every image in the swapchain
+    for(size_t i = 0; i < swapchainData_.images.size(); i++)
+    {
+        swapchainData_.imageViews[i] =
+          createImageView(swapchainData_.format.format, swapchainData_.images[i], VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    }
 
     LOG_INFO("Swapchain created");
 }
@@ -383,7 +441,7 @@ void Engine::createRenderPass()
 
     VkAttachmentDescription colorAttachment = {};
 
-    colorAttachment.format = swapchain_.getFormat().format;
+    colorAttachment.format = swapchainData_.format.format;
     colorAttachment.samples = msaaSamples_;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear the color to constant value at start
     colorAttachment.storeOp =
@@ -407,7 +465,7 @@ void Engine::createRenderPass()
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription colorAttachmentResolve = {};
-    colorAttachmentResolve.format = swapchain_.getFormat().format;
+    colorAttachmentResolve.format = swapchainData_.format.format;
     colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -536,15 +594,15 @@ void Engine::createGraphicsPipeline()
     viewport_ = {};
     viewport_.x = 0;
     viewport_.y = 0;
-    viewport_.width = (float)swapchain_.getExtent().width;
-    viewport_.height = (float)swapchain_.getExtent().height;
+    viewport_.width = (float)swapchainData_.extent.width;
+    viewport_.height = (float)swapchainData_.extent.height;
     viewport_.minDepth = 0.0f;
     viewport_.maxDepth = 1.0f;
 
     // The scissor is masking the "out of the scissor rectangle" data from the viewport
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
-    scissor.extent = swapchain_.getExtent();
+    scissor.extent = swapchainData_.extent;
 
     VkPipelineViewportStateCreateInfo viewPortInfo = {};
     viewPortInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -646,18 +704,17 @@ void Engine::createGraphicsPipeline()
 void Engine::createCommandPool()
 {
     LOG_INFO("Creating Command Pools...");
-    QueueFamilyIndices indices = physicalDeviceProperties_.getQueueFamilyIndices();
 
     // Create a command pool only for graphics operations
     VkCommandPoolCreateInfo commandPoolInfo = {};
     commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    commandPoolInfo.queueFamilyIndex = indices.graphicsFamily;
+    commandPoolInfo.queueFamilyIndex = indices_.graphicsFamily;
 
     VK_CALL(vkCreateCommandPool(logicalDevice_, &commandPoolInfo, nullptr, &commandPool_));
 
-    if(indices.transferAvailable())
+    if(indices_.transferAvailable())
     {
-        commandPoolInfo.queueFamilyIndex = indices.transferFamily;
+        commandPoolInfo.queueFamilyIndex = indices_.transferFamily;
 
         VK_CALL(vkCreateCommandPool(logicalDevice_, &commandPoolInfo, nullptr, &commandPoolTransfert_));
     }
@@ -668,8 +725,8 @@ void Engine::createCommandPool()
 void Engine::createDepthRessources()
 {
     VkFormat depthFormat = findDepthFormat();
-    utilities_.createImage(swapchain_.getExtent().width,
-                           swapchain_.getExtent().height,
+    utilities_.createImage(swapchainData_.extent.width,
+                           swapchainData_.extent.height,
                            1,
                            msaaSamples_,
                            depthFormat,
@@ -687,10 +744,10 @@ void Engine::createDepthRessources()
 
 void Engine::createColorRessources()
 {
-    VkFormat format = swapchain_.getFormat().format;
+    VkFormat format = swapchainData_.format.format;
 
-    utilities_.createImage(swapchain_.getExtent().width,
-                           swapchain_.getExtent().height,
+    utilities_.createImage(swapchainData_.extent.width,
+                           swapchainData_.extent.height,
                            1,
                            msaaSamples_,
                            format,
@@ -778,10 +835,10 @@ void Engine::createUniformBuffer()
     LOG_INFO("Creating Uniform Buffer...");
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
-    uniformBuffers_.resize(swapchain_.getImageViews().size());
-    uniformBuffersMemory_.resize(swapchain_.getImageViews().size());
+    uniformBuffers_.resize(swapchainData_.imageViews.size());
+    uniformBuffersMemory_.resize(swapchainData_.imageViews.size());
 
-    for(size_t i = 0; i < swapchain_.getImageViews().size(); i++)
+    for(size_t i = 0; i < swapchainData_.imageViews.size(); i++)
     {
         utilities_.createBuffer(bufferSize,
                                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -804,8 +861,9 @@ void Engine::updateUniformBuffer(uint32_t imageIndex)
 
     ubo.view = glm::lookAt(camera_.getPosition(), camera_.getCenter(), camera_.getUp());
 
-    ubo.projection = glm::perspective(
-      camera_.getFov(), swapchain_.getExtent().width / (float)swapchain_.getExtent().height, 0.01f, 100.0f);
+    ubo.projection = glm::perspective(camera_.getFov(),
+                                      swapchainData_.extent.width /
+                                        static_cast<float>(swapchainData_.getExtent().height, 0.01f, 100.0f));
 
     static auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -816,7 +874,7 @@ void Engine::updateUniformBuffer(uint32_t imageIndex)
 
     void* pData;
 
-    for(uint8_t i = 0; i < swapchain_.getImageViews().size(); i++)
+    for(uint8_t i = 0; i < swapchainData_.imageViews.size(); i++)
     {
         vkMapMemory(logicalDevice_, uniformBuffersMemory_[i], 0, sizeof(UniformBufferObject), 0, &pData);
         memcpy(pData, &ubo, sizeof(UniformBufferObject));
@@ -831,17 +889,17 @@ void Engine::createDescriptorPool()
     std::array<VkDescriptorPoolSize, 2> descPoolSizes = {};
     // UBO
     descPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descPoolSizes[0].descriptorCount = static_cast<uint32_t>(swapchain_.getImages().size());
+    descPoolSizes[0].descriptorCount = static_cast<uint32_t>(swapchainData_.images.size());
 
     // Textures
     descPoolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descPoolSizes[1].descriptorCount = static_cast<uint32_t>(swapchain_.getImages().size());
+    descPoolSizes[1].descriptorCount = static_cast<uint32_t>(swapchainData_.images.size());
 
     VkDescriptorPoolCreateInfo descPoolInfo = {};
     descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descPoolInfo.poolSizeCount = static_cast<uint32_t>(descPoolSizes.size());
     descPoolInfo.pPoolSizes = descPoolSizes.data();
-    descPoolInfo.maxSets = static_cast<uint32_t>(swapchain_.getImages().size());
+    descPoolInfo.maxSets = static_cast<uint32_t>(swapchainData_.images.size());
 
     VK_CALL(vkCreateDescriptorPool(logicalDevice_, &descPoolInfo, nullptr, &descriptorPool_));
 
@@ -851,18 +909,18 @@ void Engine::createDescriptorPool()
 void Engine::createDescriptorSets()
 {
     LOG_INFO("Creating Descriptor Sets...");
-    std::vector<VkDescriptorSetLayout> layouts(swapchain_.getImages().size(), descriptorSetLayout_);
+    std::vector<VkDescriptorSetLayout> layouts(swapchainData_.images.size(), descriptorSetLayout_);
     VkDescriptorSetAllocateInfo descAlloc = {};
     descAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     descAlloc.descriptorPool = descriptorPool_;
-    descAlloc.descriptorSetCount = static_cast<uint32_t>(swapchain_.getImages().size());
+    descAlloc.descriptorSetCount = static_cast<uint32_t>(swapchainData_.images.size());
     descAlloc.pSetLayouts = layouts.data();
 
-    descriptorSets_.resize(swapchain_.getImages().size());
+    descriptorSets_.resize(swapchainData_.images.size());
 
     VK_CALL(vkAllocateDescriptorSets(logicalDevice_, &descAlloc, descriptorSets_.data()));
 
-    for(size_t i = 0; i < swapchain_.getImages().size(); i++)
+    for(size_t i = 0; i < swapchainData_.images.size(); i++)
     {
         VkDescriptorBufferInfo descBufferInfo = {};
         descBufferInfo.buffer = uniformBuffers_[i];
@@ -904,7 +962,7 @@ void Engine::createDescriptorSets()
 void Engine::createCommandBuffers()
 {
     LOG_INFO("Creating and Recording Command Buffers...");
-    commandBuffers_.resize(swapchain_.getFramebuffers().size());
+    commandBuffers_.resize(swapchainData_.framebuffers.size());
 
     VkCommandBufferAllocateInfo allocateBufferInfo = {};
     allocateBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -935,8 +993,8 @@ void Engine::createCommandBuffers()
         renderBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderBeginInfo.pClearValues = clearValues.data();
         renderBeginInfo.renderPass = renderPass_;
-        renderBeginInfo.framebuffer = swapchain_.getFramebuffers()[i];
-        renderBeginInfo.renderArea.extent = swapchain_.getExtent();
+        renderBeginInfo.framebuffer = swapchainData_.framebuffers[i];
+        renderBeginInfo.renderArea.extent = swapchainData_.extent;
         renderBeginInfo.renderArea.offset = {0, 0};
 
         vkCmdBeginRenderPass(commandBuffers_[i],
@@ -992,8 +1050,8 @@ void Engine::createSyncObjects()
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-VK_CALL(vkCreateSemaphore(logicalDevice_, &semaphoreInfo, nullptr, &imageAvailableSemaphore_[i]|);
-            throw std::runtime_error("failed to create semaphore for a frame!");
+        VK_CALL(vkCreateSemaphore(logicalDevice_, &semaphoreInfo, nullptr, &imageAvailableSemaphore_[i]));
+        throw std::runtime_error("failed to create semaphore for a frame!");
     }
 }
 
@@ -1099,7 +1157,7 @@ void Engine::cleanUpSwapChain()
 {
     swapchain_.destroyFramebuffers();
 
-    vkFreeCommandBuffers(logicalDevice_, commandPool_, (uint32_t)commandBuffers_.size(), commandBuffers_.data());
+    vkFreeCommandBuffers(logicalDevice_, commandPool_, commandBuffers_.size(), commandBuffers_.data());
 
     vkDestroyImageView(logicalDevice_, depthImageView_, nullptr);
     vkDestroyImage(logicalDevice_, depthImage_, nullptr);
@@ -1112,7 +1170,13 @@ void Engine::cleanUpSwapChain()
     vkDestroyPipeline(logicalDevice_, graphicsPipeline_, nullptr);
     vkDestroyPipelineLayout(logicalDevice_, pipelineLayout_, nullptr);
     vkDestroyRenderPass(logicalDevice_, renderPass_, nullptr);
-    swapchain_.destroy();
+
+    for(auto imageView: swapchainData_.imageViews)
+    {
+        vkDestroyImageView(logicalDevice_, imageView, nullptr);
+    }
+
+    vkDestroySwapchainKHR(logicalDevice_, swapchainData_.swapchain, nullptr);
 }
 
 void Engine::cleanup()
@@ -1129,7 +1193,7 @@ void Engine::cleanup()
         lenaTexture_.destroy();
 
         // Vertex/Uniform/Index buffers
-        for(size_t i = 0; i < swapchain_.getImages().size(); i++)
+        for(size_t i = 0; i < swapchainData_.images.size(); i++)
         {
             vkDestroyBuffer(logicalDevice_, uniformBuffers_[i], nullptr);
             vkFreeMemory(logicalDevice_, uniformBuffersMemory_[i], nullptr);

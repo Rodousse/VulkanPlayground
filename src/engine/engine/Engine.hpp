@@ -40,6 +40,18 @@ class Engine
         Vector3 lightPos;
     };
 
+    struct Swapchain
+    {
+        VkSwapchainKHR swapchain;
+        std::vector<VkImage> images;
+        std::vector<VkImageView> imageViews;
+        std::vector<VkFramebuffer> framebuffers;
+
+        VkSurfaceFormatKHR format;
+        VkExtent2D extent;
+        VkPresentModeKHR presentMode;
+    } swapchainData_;
+
     const std::vector<const char*> DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -47,7 +59,7 @@ class Engine
     std::vector<const char*> requiredExtensions_;
     VkPhysicalDeviceFeatures requiredDeviceFeatures_;
 
-    SwapChainSupportDetails swapChainDetails_;
+    SwapchainSupportDetails swapchainDetails_;
 
     QueueFamilyIndices indices_;
 
@@ -67,8 +79,7 @@ class Engine
     VkQueue transfertQueue_;
 
     VkExtent2D windowExtent_;
-    Swapchain swapchain_;
-    SwapChainSupportDetails swapchainSupportDetails_;
+    SwapchainSupportDetails swapchainSupportDetails_;
 
     VkRenderPass renderPass_;
     VkDescriptorSetLayout descriptorSetLayout_;

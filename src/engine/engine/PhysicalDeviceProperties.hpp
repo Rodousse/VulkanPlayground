@@ -22,7 +22,7 @@ struct QueueFamilyIndices
     }
 };
 
-struct SwapChainSupportDetails
+struct SwapchainSupportDetails
 {
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
     std::vector<VkSurfaceFormatKHR> surfaceFormats;
@@ -30,7 +30,7 @@ struct SwapChainSupportDetails
 };
 
 QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface);
-SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
+SwapchainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
 
 bool checkDeviceExtensionSupport(VkPhysicalDevice device, const std::vector<const char*>& extensions);
 VkFormat findSupportedTilingFormat(VkPhysicalDevice device,
