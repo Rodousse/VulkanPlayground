@@ -17,11 +17,11 @@ function(fetch_imgui_target)
         ${imguirep_SOURCE_DIR}/imgui_draw.cpp 
         ${imguirep_SOURCE_DIR}/imgui_tables.cpp 
         ${imguirep_SOURCE_DIR}/imgui_widgets.cpp)
-        add_library(imgui SHARED ${imgui_SRC})
-        target_include_directories(imgui PUBLIC ${imguirep_SOURCE_DIR} ${imguirep_SOURCE_DIR}/backends)
-        target_link_libraries(imgui PUBLIC glfw Vulkan::Vulkan)
-        target_compile_definitions(imgui PUBLIC "-DImTextureID=ImU64")
     endif()
+    add_library(imgui SHARED ${imgui_SRC})
+    target_include_directories(imgui PUBLIC ${imguirep_SOURCE_DIR} ${imguirep_SOURCE_DIR}/backends)
+    target_link_libraries(imgui PUBLIC glfw Vulkan::Vulkan)
+    target_compile_definitions(imgui PUBLIC "-DGLFW_INCLUDE_NONE -DGLFW_INCLUDE_VULKAN -DImTextureID=ImU64")
     message(STATUS ${imguirep_SOURCE_DIR})
     message(STATUS  ${imgui_file_dialog_SOURCE_DIR})
 

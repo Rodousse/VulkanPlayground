@@ -2,6 +2,7 @@ set(ENGINE_SRC
   engine/Camera.cpp
   engine/DataIO.cpp
   engine/DebugMessenger.cpp
+  engine/descriptor.cpp
   engine/Engine.cpp
   engine/Mesh.cpp
   engine/PerspectiveCamera.cpp
@@ -13,6 +14,7 @@ set(ENGINE_HEADERS
   engine/Camera.hpp
   engine/DataIO.hpp
   engine/DebugMessenger.hpp
+  engine/descriptor.hpp
   engine/Engine.hpp
   engine/Logger.hpp
   engine/Mesh.hpp
@@ -38,3 +40,5 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 target_compile_definitions(engine PUBLIC ${ENGINE_STATIC_FLAG} _USE_MATH_DEFINES _ENABLE_EXTENDED_ALIGNED_STORAGE PRIVATE ENGINE_EXPORT)
+target_compile_shaders(engine "${SHADER_SRC_DIR}/vertex.vert;${SHADER_SRC_DIR}/fragment.frag")
+target_compile_definitions(engine PRIVATE -DSHADER_PATH="${SHADER_BINARY_DIR}")

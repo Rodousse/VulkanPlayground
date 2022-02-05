@@ -6,6 +6,7 @@
 #include "engine/Logger.hpp"
 #include "engine/PhysicalDeviceProperties.hpp"
 #include "engine/assert.hpp"
+#include "engine/descriptor.hpp"
 #include "engine/utils.hpp"
 
 #include <algorithm>
@@ -582,8 +583,8 @@ void Engine::createDescriptorSetLayout()
 void Engine::createGraphicsPipeline()
 {
     LOG_INFO("Creating Graphics Pipeline...");
-    auto vertexShader = readFile(std::string(RESOURCE_PATH) + "/shaders/vert.spv");
-    auto fragmentShader = readFile(std::string(RESOURCE_PATH) + "/shaders/frag.spv");
+    auto vertexShader = readFile(std::string(SHADER_PATH) + "/vert.spv");
+    auto fragmentShader = readFile(std::string(SHADER_PATH) + "/frag.spv");
 
     VkShaderModule vertexShaderModule = createShaderModule(vertexShader);
     VkShaderModule fragmentShaderModule = createShaderModule(fragmentShader);
@@ -605,8 +606,8 @@ void Engine::createGraphicsPipeline()
     VkPipelineShaderStageCreateInfo shaderStageInfos[] = {vertShaderStageInfo, fragShaderStageInfo};
 
     // describe the infos inputed for the vertex and the structure of the datas (size, offset,...)
-    auto vertexBindingDescription = Vertex::getBindingDescription();
-    auto vertexAttributeDescriptions = Vertex::getAttributeDescriptions();
+    auto vertexBindingDescription = descriptor::getVertexBindingDescription();
+    auto vertexAttributeDescriptions = descriptor::getVertexAttributeDescriptions();
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -818,7 +819,7 @@ void Engine::recreateCommandBuffer()
 void Engine::createVertexBuffer()
 {
     LOG_INFO("Creating and Allocating Vertex Buffer");
-    VkDeviceSize bufferSize = sizeof(meshes_[0].vertices[0]) * meshes_[0].vertices.size();
+    VkDeviceSize bufferSize = sizeof(mesh_.vertices[0]) * mesh_.vertices.size();
     VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     VkBuffer stagingBuffer;
@@ -832,7 +833,7 @@ void Engine::createVertexBuffer()
     // Documentation : memory must have been created with a memory type that reports VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     //                  flags is reserved for future use of the vulkanAPI.
     vkMapMemory(logicalDevice_, stagingBufferMemory, 0, bufferSize, 0, &pData);
-    memcpy(pData, meshes_[0].vertices.data(), (size_t)bufferSize);
+    memcpy(pData, mesh_.vertices.data(), static_cast<std::size_t>(bufferSize));
     vkUnmapMemory(logicalDevice_, stagingBufferMemory);
 
     utils::createBuffer(logicalDevice_,
@@ -854,7 +855,7 @@ void Engine::createVertexBuffer()
 void Engine::createVertexIndexBuffer()
 {
     LOG_INFO("Creating and Allocating Index Buffer");
-    VkDeviceSize bufferSize = sizeof(meshes_[0].faces[0]) * meshes_[0].faces.size();
+    VkDeviceSize bufferSize = sizeof(mesh_.faces[0]) * mesh_.faces.size();
     VkBufferUsageFlags usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     VkBuffer stagingBuffer;
@@ -868,7 +869,7 @@ void Engine::createVertexIndexBuffer()
     // Documentation : memory must have been created with a memory type that reports VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     //                  flags is reserved for future use of the vulkanAPI.
     vkMapMemory(logicalDevice_, stagingBufferMemory, 0, bufferSize, 0, &pData);
-    memcpy(pData, meshes_[0].faces.data(), (size_t)bufferSize);
+    memcpy(pData, mesh_.faces.data(), static_cast<size_t>(bufferSize));
     vkUnmapMemory(logicalDevice_, stagingBufferMemory);
 
     utils::createBuffer(logicalDevice_,
@@ -916,11 +917,11 @@ void Engine::updateUniformBuffer(uint32_t imageIndex)
 
     UniformBufferObject ubo = {};
 
-    ubo.model = Matrix4(1.0f);
+    ubo.model = Matrix4::Identity();
 
-    ubo.view = camera_.getView();
+    ubo.view = camera_->getView();
 
-    ubo.projection = camera_.getProjection();
+    ubo.projection = camera_->getProjection();
 
     static auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -1058,18 +1059,14 @@ void Engine::createCommandBuffers()
                              &renderBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE); // Last parameter used to embedd the command for a primary
                                                           // command buffer or secondary
-
-        for(uint32_t idxMesh = 0; idxMesh < model_.getMeshes().size(); idxMesh++)
         {
-            const MeshData& meshData = model_.getMeshData()[idxMesh];
-            const data::Mesh& mesh = model_.getMeshes()[idxMesh];
             vkCmdBindPipeline(commandBuffers_[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline_);
 
-            VkBuffer vertexBuffers[] = {meshData.vertexBuffer};
+            VkBuffer vertexBuffers[] = {meshData_.vertexBuffer};
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffers_[i], 0, 1, vertexBuffers, offsets);
 
-            vkCmdBindIndexBuffer(commandBuffers_[i], meshData.vertexIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindIndexBuffer(commandBuffers_[i], meshData_.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(commandBuffers_[i],
                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pipelineLayout_,
@@ -1080,9 +1077,8 @@ void Engine::createCommandBuffers()
                                     nullptr);
 
             // 1 used for the instanced rendering could be higher i think for multiple instanced
-            vkCmdDrawIndexed(commandBuffers_[i], static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+            vkCmdDrawIndexed(commandBuffers_[i], static_cast<uint32_t>(mesh_.faces.size() * 3), 1, 0, 0, 0);
         }
-
         vkCmdEndRenderPass(commandBuffers_[i]);
 
         VK_CALL(vkEndCommandBuffer(commandBuffers_[i]));
@@ -1254,7 +1250,11 @@ void Engine::cleanup()
             vkFreeMemory(logicalDevice_, uniformBuffersMemory_[i], nullptr);
         }
 
-        model_.destroy();
+        // Mesh data
+        vkDestroyBuffer(logicalDevice_, meshData_.vertexBuffer, nullptr);
+        vkFreeMemory(logicalDevice_, meshData_.vertexBufferMemory, nullptr);
+        vkDestroyBuffer(logicalDevice_, meshData_.indexBuffer, nullptr);
+        vkFreeMemory(logicalDevice_, meshData_.indexBufferMemory, nullptr);
 
         // Semaphores
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -1267,7 +1267,7 @@ void Engine::cleanup()
         // Command Pool
         vkDestroyCommandPool(logicalDevice_, commandPool_, nullptr);
 
-        if(physicalDeviceProperties_.getQueueFamilyIndices().transferAvailable())
+        if(indices_.transferAvailable())
         {
             vkDestroyCommandPool(logicalDevice_, commandPoolTransfert_, nullptr);
         }
@@ -1284,24 +1284,66 @@ void Engine::cleanup()
     }
 }
 
-std::vector<char> Engine::readFile(const std::string& fileName)
+/*@brief : Choose the optimal surface format for the swap chain and return it
+ */
+void Engine::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
 {
-    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
-
-    if(!file.is_open())
+    if(availableFormats.size() == 1 && availableFormats[0].format == VK_FORMAT_UNDEFINED)
     {
-        throw std::runtime_error("failed to open file!");
+        swapchainData_.format = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+        return;
     }
 
-    size_t fileSize = (size_t)file.tellg();
-    std::vector<char> buffer(fileSize);
+    for(const auto& format: availableFormats)
+    {
+        if(format.format == VK_FORMAT_B8G8R8A8_UNORM && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        {
+            swapchainData_.format = format;
+            return;
+        }
+    }
 
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
+    swapchainData_.format = availableFormats[0];
+}
 
-    file.close();
+/*@brief : Choose the optimal present mode for the swap chain and return it
+ */
+void Engine::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availableModes)
+{
+    VkPresentModeKHR bestmode = VK_PRESENT_MODE_FIFO_KHR;
 
-    return buffer;
+    for(const auto& mode: availableModes)
+    {
+        if(mode == VK_PRESENT_MODE_MAILBOX_KHR)
+        {
+            swapchainData_.presentMode = mode;
+            return;
+        }
+        else if(mode == VK_PRESENT_MODE_IMMEDIATE_KHR)
+        {
+            bestmode = mode;
+        }
+    }
+
+    swapchainData_.presentMode = bestmode;
+}
+
+void Engine::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
+{
+    if(capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+    {
+        swapchainData_.extent = capabilities.currentExtent;
+        return;
+    }
+    else
+    {
+        VkExtent2D actualExtent = windowExtent_;
+        actualExtent.width =
+          std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
+        actualExtent.height = std::max(capabilities.minImageExtent.height,
+                                       std::min(capabilities.maxImageExtent.height, actualExtent.height));
+        swapchainData_.extent = actualExtent;
+    }
 }
 
 } // namespace engine
@@ -1319,7 +1361,7 @@ bool isDeviceSuitable(VkPhysicalDevice device,
     VkPhysicalDeviceFeatures deviceFeatures = {};
     vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-    QueueFamilyIndices indices = engine::findQueueFamilies(device, surface);
+    engine::QueueFamilyIndices indices = engine::findQueueFamilies(device, surface);
 
     bool isDeviceExtensionsSupported = engine::checkDeviceExtensionSupport(device, extensions);
 
@@ -1327,7 +1369,7 @@ bool isDeviceSuitable(VkPhysicalDevice device,
 
     if(isDeviceExtensionsSupported)
     {
-        SwapChainSupportDetails swapChainSupport = engine::querySwapChainSupport(device, surface);
+        engine::SwapchainSupportDetails swapChainSupport = engine::querySwapChainSupport(device, surface);
         swapChainAdequate = !swapChainSupport.surfaceFormats.empty() && !swapChainSupport.presentModes.empty();
     }
 

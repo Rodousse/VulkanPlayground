@@ -52,6 +52,14 @@ class Engine
         VkPresentModeKHR presentMode;
     } swapchainData_;
 
+    struct MeshData
+    {
+        VkBuffer vertexBuffer;
+        VkDeviceMemory vertexBufferMemory;
+        VkBuffer indexBuffer;
+        VkDeviceMemory indexBufferMemory;
+    } meshData_;
+
     const std::vector<const char*> DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -127,8 +135,7 @@ class Engine
 
     MaterialTexture lenaTexture_;
     std::shared_ptr<Camera> camera_;
-    std::vector<Mesh> meshes_;
-    Mesh model_;
+    Mesh mesh_;
     ApplicationStateChange applicationChanges_;
 
     /***********************************************************************************************************************/
@@ -178,6 +185,11 @@ class Engine
     // Synchronisation
     void createSyncObjects();
     void checkApplicationState();
+
+    // Swapchain
+    void chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+    void chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availableModes);
+    void chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 
     void cleanup();
 
