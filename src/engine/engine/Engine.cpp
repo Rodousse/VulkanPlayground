@@ -1,10 +1,12 @@
 #include "engine/Engine.hpp"
 
 #include "DataIO.hpp"
+#include "engine/CommonTypes.hpp"
 #include "engine/DebugMessenger.hpp"
 #include "engine/Logger.hpp"
 #include "engine/PhysicalDeviceProperties.hpp"
 #include "engine/assert.hpp"
+#include "engine/utils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -133,7 +135,7 @@ void Engine::initVulkan()
     createCommandPool();
     createDepthRessources();
     createColorRessources();
-    swapchain_.createFramebuffers(renderPass_, {colorImageView_, depthImageView_});
+    createFramebuffers(renderPass_, {colorImageView_, depthImageView_});
     lenaTexture_.create();
     //  createVertexBuffer();
     //  createVertexIndexBuffer();
@@ -249,10 +251,9 @@ void Engine::resizeExtent(int width, int height)
     querySwapChainSupport(physicalDevice_, surface_); // Used for querySwapChainSupport
 }
 
-// TODO : Make it a pointer so that it don't have to do assignation opperations
-void Engine::setCamera(const Camera& camera)
+void Engine::setCamera(std::shared_ptr<Camera> camera)
 {
-    camera_ = camera;
+    camera_ = std::move(camera);
 }
 
 void Engine::setModel(const Model& model)
@@ -284,9 +285,10 @@ VkResult Engine::areInstanceExtensionsCompatible(const char** extensions, uint32
     // the instance
     for(uint8_t i = 0; i < extensionsCount; i++)
     {
-        if(std::find_if(vkExtensions.begin(), vkExtensions.end(), [extensions, i](const VkExtensionProperties& prop) {
-               return strcmp(prop.extensionName, extensions[i]) == 0;
-           }) == vkExtensions.end())
+        if(std::find_if(vkExtensions.begin(),
+                        vkExtensions.end(),
+                        [extensions, i](const VkExtensionProperties& prop)
+                        { return strcmp(prop.extensionName, extensions[i]) == 0; }) == vkExtensions.end())
         {
             std::cerr << "Extension : " << extensions[i] << " not supported" << std::endl;
             return VK_ERROR_EXTENSION_NOT_PRESENT;
@@ -428,8 +430,8 @@ void Engine::createSwapChain()
     // Configure image view for every image in the swapchain
     for(size_t i = 0; i < swapchainData_.images.size(); i++)
     {
-        swapchainData_.imageViews[i] =
-          createImageView(swapchainData_.format.format, swapchainData_.images[i], VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        swapchainData_.imageViews[i] = utils::createImageView(
+          logicalDevice_, swapchainData_.format.format, swapchainData_.images[i], VK_IMAGE_ASPECT_COLOR_BIT, 1);
     }
 
     LOG_INFO("Swapchain created");
@@ -519,6 +521,33 @@ void Engine::createRenderPass()
     VK_CALL(vkCreateRenderPass(logicalDevice_, &renderPassInfo, nullptr, &renderPass_));
 
     LOG_INFO("Render Pass Created");
+}
+
+void Engine::createFramebuffers(VkRenderPass renderPass, const std::vector<VkImageView>& attachements)
+{
+    LOG_INFO("Creating Framebuffers...");
+    swapchainData_.framebuffers.resize(swapchainData_.imageViews.size());
+    std::vector<VkImageView> frameAttachements;
+    frameAttachements.insert(frameAttachements.begin(), attachements.begin(), attachements.end());
+
+    for(size_t i = 0; i < swapchainData_.imageViews.size(); i++)
+    {
+        frameAttachements.push_back(swapchainData_.imageViews[i]);
+        VkFramebufferCreateInfo framebufferInfo = {};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.attachmentCount = static_cast<uint32_t>(frameAttachements.size());
+        framebufferInfo.pAttachments = frameAttachements.data();
+        framebufferInfo.layers = 1;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.height = swapchainData_.extent.height;
+        framebufferInfo.width = swapchainData_.extent.width;
+
+        VK_CALL(vkCreateFramebuffer(logicalDevice_, &framebufferInfo, nullptr, &swapchainData_.framebuffers[i]));
+
+        frameAttachements.pop_back();
+    }
+
+    LOG_INFO("Framebuffers Created");
 }
 
 void Engine::createDescriptorSetLayout()
@@ -725,40 +754,58 @@ void Engine::createCommandPool()
 void Engine::createDepthRessources()
 {
     VkFormat depthFormat = findDepthFormat();
-    utilities_.createImage(swapchainData_.extent.width,
-                           swapchainData_.extent.height,
-                           1,
-                           msaaSamples_,
-                           depthFormat,
-                           VK_IMAGE_TILING_OPTIMAL,
-                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                           depthImage_,
-                           depthImageMemory_);
+    utils::createImage(logicalDevice_,
+                       swapchainData_.extent.width,
+                       swapchainData_.extent.height,
+                       1,
+                       msaaSamples_,
+                       depthFormat,
+                       VK_IMAGE_TILING_OPTIMAL,
+                       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                       memoryProperties_,
+                       depthImage_,
+                       depthImageMemory_);
 
-    depthImageView_ = utilities_.createImageView(depthFormat, depthImage_, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+    depthImageView_ = utils::createImageView(logicalDevice_, depthFormat, depthImage_, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
-    utilities_.transitionImageLayout(
-      depthImage_, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+    utils::transitionImageLayout(logicalDevice_,
+                                 indices_,
+                                 getCommandPoolTransfer(),
+                                 getTransfertQueue(),
+                                 depthImage_,
+                                 depthFormat,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                 1);
 }
 
 void Engine::createColorRessources()
 {
     VkFormat format = swapchainData_.format.format;
 
-    utilities_.createImage(swapchainData_.extent.width,
-                           swapchainData_.extent.height,
-                           1,
-                           msaaSamples_,
-                           format,
-                           VK_IMAGE_TILING_OPTIMAL,
-                           VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                           colorImage_,
-                           colorMemory_);
-    colorImageView_ = utilities_.createImageView(format, colorImage_, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-    utilities_.transitionImageLayout(
-      colorImage_, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+    utils::createImage(logicalDevice_,
+                       swapchainData_.extent.width,
+                       swapchainData_.extent.height,
+                       1,
+                       msaaSamples_,
+                       format,
+                       VK_IMAGE_TILING_OPTIMAL,
+                       VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                       memoryProperties_,
+                       colorImage_,
+                       colorMemory_);
+    colorImageView_ = utils::createImageView(logicalDevice_, format, colorImage_, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    utils::transitionImageLayout(logicalDevice_,
+                                 indices_,
+                                 getCommandPoolTransfer(),
+                                 getTransfertQueue(),
+                                 colorImage_,
+                                 format,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 1);
 }
 
 void Engine::recreateCommandBuffer()
@@ -777,7 +824,8 @@ void Engine::createVertexBuffer()
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
 
-    utilities_.createBuffer(bufferSize, usage, properties, stagingBuffer, stagingBufferMemory);
+    utils::createBuffer(
+      logicalDevice_, indices_, bufferSize, usage, properties, memoryProperties_, stagingBuffer, stagingBufferMemory);
 
     void* pData; // Contains a pointer to the mapped memory
 
@@ -787,12 +835,16 @@ void Engine::createVertexBuffer()
     memcpy(pData, meshes_[0].vertices.data(), (size_t)bufferSize);
     vkUnmapMemory(logicalDevice_, stagingBufferMemory);
 
-    utilities_.createBuffer(bufferSize,
-                            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                            vertexBuffer_,
-                            vertexBufferMemory_);
-    utilities_.copyBuffer(stagingBuffer, vertexBuffer_, bufferSize);
+    utils::createBuffer(logicalDevice_,
+                        indices_,
+                        bufferSize,
+                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        memoryProperties_,
+                        vertexBuffer_,
+                        vertexBufferMemory_);
+    utils::copyBuffer(
+      logicalDevice_, getCommandPoolTransfer(), getTransfertQueue(), stagingBuffer, vertexBuffer_, bufferSize);
 
     vkDestroyBuffer(logicalDevice_, stagingBuffer, nullptr);
     vkFreeMemory(logicalDevice_, stagingBufferMemory, nullptr);
@@ -802,28 +854,33 @@ void Engine::createVertexBuffer()
 void Engine::createVertexIndexBuffer()
 {
     LOG_INFO("Creating and Allocating Index Buffer");
-    VkDeviceSize bufferSize = sizeof(meshes_[0].indices[0]) * meshes_[0].indices.size();
+    VkDeviceSize bufferSize = sizeof(meshes_[0].faces[0]) * meshes_[0].faces.size();
     VkBufferUsageFlags usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
 
-    utilities_.createBuffer(bufferSize, usage, properties, stagingBuffer, stagingBufferMemory);
+    utils::createBuffer(
+      logicalDevice_, indices_, bufferSize, usage, properties, memoryProperties_, stagingBuffer, stagingBufferMemory);
 
     void* pData; // Contains a pointer to the mapped memory
 
     // Documentation : memory must have been created with a memory type that reports VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     //                  flags is reserved for future use of the vulkanAPI.
     vkMapMemory(logicalDevice_, stagingBufferMemory, 0, bufferSize, 0, &pData);
-    memcpy(pData, meshes_[0].indices.data(), (size_t)bufferSize);
+    memcpy(pData, meshes_[0].faces.data(), (size_t)bufferSize);
     vkUnmapMemory(logicalDevice_, stagingBufferMemory);
 
-    utilities_.createBuffer(bufferSize,
-                            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                            vertexIndexBuffer_,
-                            vertexIndexBufferMemory_);
-    utilities_.copyBuffer(stagingBuffer, vertexIndexBuffer_, bufferSize);
+    utils::createBuffer(logicalDevice_,
+                        indices_,
+                        bufferSize,
+                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        memoryProperties_,
+                        vertexIndexBuffer_,
+                        vertexIndexBufferMemory_);
+    utils::copyBuffer(
+      logicalDevice_, getCommandPoolTransfer(), getTransfertQueue(), stagingBuffer, vertexIndexBuffer_, bufferSize);
 
     vkDestroyBuffer(logicalDevice_, stagingBuffer, nullptr);
     vkFreeMemory(logicalDevice_, stagingBufferMemory, nullptr);
@@ -840,11 +897,14 @@ void Engine::createUniformBuffer()
 
     for(size_t i = 0; i < swapchainData_.imageViews.size(); i++)
     {
-        utilities_.createBuffer(bufferSize,
-                                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                uniformBuffers_[i],
-                                uniformBuffersMemory_[i]);
+        utils::createBuffer(logicalDevice_,
+                            indices_,
+                            bufferSize,
+                            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                            memoryProperties_,
+                            uniformBuffers_[i],
+                            uniformBuffersMemory_[i]);
     }
 
     LOG_INFO("Uniform Buffer Created");
@@ -856,21 +916,18 @@ void Engine::updateUniformBuffer(uint32_t imageIndex)
 
     UniformBufferObject ubo = {};
 
-    ubo.model = glm::mat4x4(1.0f);
-    ubo.view = glm::mat4x4(1.0f);
+    ubo.model = Matrix4(1.0f);
 
-    ubo.view = glm::lookAt(camera_.getPosition(), camera_.getCenter(), camera_.getUp());
+    ubo.view = camera_.getView();
 
-    ubo.projection = glm::perspective(camera_.getFov(),
-                                      swapchainData_.extent.width /
-                                        static_cast<float>(swapchainData_.getExtent().height, 0.01f, 100.0f));
+    ubo.projection = camera_.getProjection();
 
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = 2 * std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
-    ubo.lightPos = glm::vec3(4 * cos(time), 4 * sin(time), 3);
+    ubo.lightPos = Vector3(4 * cos(time), 4 * sin(time), 3);
 
     void* pData;
 
@@ -1051,12 +1108,9 @@ void Engine::createSyncObjects()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         VK_CALL(vkCreateSemaphore(logicalDevice_, &semaphoreInfo, nullptr, &imageAvailableSemaphore_[i]));
-        throw std::runtime_error("failed to create semaphore for a frame!");
     }
+    LOG_INFO("Synchronization Objects Created");
 }
-
-LOG_INFO("Synchronization Objects Created");
-} // namespace engine
 
 void Engine::checkApplicationState()
 {
@@ -1116,10 +1170,8 @@ VkShaderModule Engine::createShaderModule(const std::vector<char>& shaderCode)
 
 VkSampleCountFlagBits Engine::getMaxUsableSampleCount()
 {
-    VkPhysicalDeviceProperties physicalDeviceProperties = physicalDeviceProperties_.getVkPhysicalDeviceProperties();
-
-    VkSampleCountFlags counts = std::min(physicalDeviceProperties.limits.framebufferColorSampleCounts,
-                                         physicalDeviceProperties.limits.framebufferDepthSampleCounts);
+    VkSampleCountFlags counts = std::min(deviceProperties_.limits.framebufferColorSampleCounts,
+                                         deviceProperties_.limits.framebufferDepthSampleCounts);
 
     if(counts & VK_SAMPLE_COUNT_32_BIT)
         return VK_SAMPLE_COUNT_32_BIT;
@@ -1149,13 +1201,16 @@ void Engine::recreateSwapChain()
     createGraphicsPipeline();
     createDepthRessources();
     createColorRessources();
-    swapchain_.createFramebuffers(renderPass_, {colorImageView_, depthImageView_});
+    createFramebuffers(renderPass_, {colorImageView_, depthImageView_});
     createCommandBuffers();
 }
 
 void Engine::cleanUpSwapChain()
 {
-    swapchain_.destroyFramebuffers();
+    for(auto framebuffer: swapchainData_.framebuffers)
+    {
+        vkDestroyFramebuffer(logicalDevice_, framebuffer, nullptr);
+    }
 
     vkFreeCommandBuffers(logicalDevice_, commandPool_, commandBuffers_.size(), commandBuffers_.data());
 
@@ -1227,6 +1282,26 @@ void Engine::cleanup()
 
         vkDestroyInstance(instance_, nullptr);
     }
+}
+
+std::vector<char> Engine::readFile(const std::string& fileName)
+{
+    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
+
+    if(!file.is_open())
+    {
+        throw std::runtime_error("failed to open file!");
+    }
+
+    size_t fileSize = (size_t)file.tellg();
+    std::vector<char> buffer(fileSize);
+
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+
+    file.close();
+
+    return buffer;
 }
 
 } // namespace engine

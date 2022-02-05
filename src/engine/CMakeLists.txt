@@ -5,7 +5,8 @@ set(ENGINE_SRC
   engine/Engine.cpp
   engine/Mesh.cpp
   engine/PerspectiveCamera.cpp
-  engine/PhysicalDeviceProperties.cpp)
+  engine/PhysicalDeviceProperties.cpp
+  engine/utils.cpp)
 
 set(ENGINE_HEADERS
   engine/assert.hpp
@@ -16,7 +17,8 @@ set(ENGINE_HEADERS
   engine/Logger.hpp
   engine/Mesh.hpp
   engine/PerspectiveCamera.hpp
-  engine/PhysicalDeviceProperties.hpp)
+  engine/PhysicalDeviceProperties.hpp
+  engine/utils.hpp)
 
 add_library(engine SHARED ${ENGINE_SRC} ${ENGINE_HEADERS})
 target_link_libraries(engine PUBLIC imgui Vulkan::Vulkan Eigen3::Eigen Stbipp::Stbipp PRIVATE assimp::assimp)

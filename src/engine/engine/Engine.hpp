@@ -70,7 +70,6 @@ class Engine
     VkDevice logicalDevice_;
 
     VkDebugUtilsMessengerEXT debugMessenger_;
-    VulkanUtils utilities_;
 
     VkSurfaceKHR surface_;
 
@@ -127,7 +126,7 @@ class Engine
      * ******************************************************/
 
     MaterialTexture lenaTexture_;
-    Camera camera_;
+    std::shared_ptr<Camera> camera_;
     std::vector<Mesh> meshes_;
     Mesh model_;
     ApplicationStateChange applicationChanges_;
@@ -146,6 +145,7 @@ class Engine
     void cleanUpSwapChain();
     void createRenderPass();
     void createGraphicsPipeline();
+    void createFramebuffers(VkRenderPass renderPass, const std::vector<VkImageView>& attachements);
     void createCommandPool();
     void createCommandBuffers();
     void createDepthRessources();
@@ -198,7 +198,7 @@ class Engine
 
     void resizeExtent(int width, int height);
 
-    void setCamera(const Camera& camera);
+    void setCamera(std::shared_ptr<Camera> camera);
     void setModel(const Mesh& model);
 
     void drawFrame();
