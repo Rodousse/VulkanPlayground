@@ -41,19 +41,19 @@ void destroyDebugMessenger(VkInstance instance, VkDebugUtilsMessengerEXT messeng
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL defaultDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                    VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                    const VkDebugUtilsMessengerCallbackDataEXT* pCallBackData,
-                                                    void* pUserData)
+                                                           VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                           const VkDebugUtilsMessengerCallbackDataEXT* pCallBackData,
+                                                           void* pUserData)
 {
     switch(messageSeverity)
     {
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: LOG_INFO(pCallBackData->pMessage); break;
 
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: LOG_INFO(pCallBackData->pMessage); break;
+        //case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: LOG_INFO(pCallBackData->pMessage); break;
 
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: LOG_INFO(pCallBackData->pMessage); break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: LOG_WARNING(pCallBackData->pMessage); break;
 
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: LOG_INFO(pCallBackData->pMessage); break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: LOG_ERROR(pCallBackData->pMessage); break;
     }
 
     return VK_FALSE;

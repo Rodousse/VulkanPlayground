@@ -31,11 +31,15 @@ VkPhysicalDevice getBestPhysicalDevice(VkInstance instance,
 } // namespace
 namespace engine
 {
-Engine::Engine():
-  utilities_(this),
-  lenaTexture_(this, std::string(RESOURCE_PATH) + "/textures/default.bmp", VK_FORMAT_R8G8B8A8_UNORM),
-  model_(this)
+Engine::Engine(): requiredDeviceFeatures_{}
 {
+    requiredDeviceFeatures_.sampleRateShading = VK_TRUE;
+    auto scene = IO::loadScene("/home/rodousse/dev/VulkanPlayground/repo/resources/meshes/bunny/reconstruction/bun_zipper.ply");
+    if(!scene)
+    {
+      THROW(std::runtime_error("Could not load the mesh"));
+    }
+    mesh_ = scene->meshes[0];
     if constexpr(ENABLE_VALIDATION_LAYERS)
     {
         requiredExtensions_.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -137,9 +141,9 @@ void Engine::initVulkan()
     createDepthRessources();
     createColorRessources();
     createFramebuffers(renderPass_, {colorImageView_, depthImageView_});
-    lenaTexture_.create();
-    //  createVertexBuffer();
-    //  createVertexIndexBuffer();
+    // lenaTexture_.create();
+    createVertexBuffer();
+    createVertexIndexBuffer();
     createUniformBuffer();
     createDescriptorPool();
     createDescriptorSets();
@@ -160,10 +164,7 @@ VkQueue Engine::getTransfertQueue() const
     {
         return transfertQueue_;
     }
-    else
-    {
-        return getGraphicsQueue();
-    }
+    return getGraphicsQueue();
 }
 
 VkQueue Engine::getGraphicsQueue() const
@@ -177,10 +178,7 @@ VkCommandPool Engine::getCommandPoolTransfer() const
     {
         return commandPoolTransfert_;
     }
-    else
-    {
-        return getCommandPool();
-    }
+    return getCommandPool();
 }
 
 VkCommandPool Engine::getCommandPool() const
@@ -195,8 +193,7 @@ void Engine::createInstance()
     // check if the validation layers are needed and if they are available
     if(ENABLE_VALIDATION_LAYERS && !debug::checkValidationLayerSupport())
     {
-        LOG_ERROR("Validation layer requested, but not available !");
-        throw std::runtime_error("Validation layer requested, but not available !");
+        THROW(std::runtime_error("Validation layer requested, but not available !"));
     }
 
     VK_CALL(
@@ -244,25 +241,22 @@ void Engine::createInstance()
     LOG_INFO("Vulkan Instance Created");
 }
 
+VkInstance Engine::getInstance()
+{
+    return instance_;
+}
+
 void Engine::resizeExtent(int width, int height)
 {
     framebufferResize = true;
     windowExtent_.width = width;
     windowExtent_.height = height;
-    querySwapChainSupport(physicalDevice_, surface_); // Used for querySwapChainSupport
+    swapchainDetails_ = querySwapChainSupport(physicalDevice_, surface_); // Used for querySwapChainSupport
 }
 
 void Engine::setCamera(std::shared_ptr<Camera> camera)
 {
     camera_ = std::move(camera);
-}
-
-void Engine::setModel(const Model& model)
-{
-    applicationChanges_.modelModified = true;
-    model_.destroy();
-    model_ = model;
-    model_.create();
 }
 
 VkResult Engine::areInstanceExtensionsCompatible(const char** extensions, uint32_t extensionsCount)
@@ -373,18 +367,18 @@ void Engine::createSwapChain()
 {
     LOG_INFO("Swapchain Creation...");
 
-    SwapchainSupportDetails swapChainSupport = swapchainDetails_;
+    swapchainDetails_ = querySwapChainSupport(physicalDevice_, surface_);
 
-    chooseSwapSurfaceFormat(swapChainSupport.surfaceFormats);
-    chooseSwapExtent(swapChainSupport.surfaceCapabilities);
-    chooseSwapPresentMode(swapChainSupport.presentModes);
+    chooseSwapSurfaceFormat(swapchainDetails_.surfaceFormats);
+    chooseSwapExtent(swapchainDetails_.surfaceCapabilities);
+    chooseSwapPresentMode(swapchainDetails_.presentModes);
 
-    uint32_t imageCount = swapChainSupport.surfaceCapabilities.minImageCount + 1;
+    uint32_t imageCount = swapchainDetails_.surfaceCapabilities.minImageCount + 1;
 
-    if(swapChainSupport.surfaceCapabilities.maxImageCount > 0 &&
-       imageCount > swapChainSupport.surfaceCapabilities.maxImageCount)
+    if(swapchainDetails_.surfaceCapabilities.maxImageCount > 0 &&
+       imageCount > swapchainDetails_.surfaceCapabilities.maxImageCount)
     {
-        imageCount = swapChainSupport.surfaceCapabilities.maxImageCount;
+        imageCount = swapchainDetails_.surfaceCapabilities.maxImageCount;
     }
 
     VkSwapchainCreateInfoKHR swapChainInfo = {};
@@ -415,7 +409,7 @@ void Engine::createSwapChain()
         swapChainInfo.pQueueFamilyIndices = nullptr;
     }
 
-    swapChainInfo.preTransform = swapChainSupport.surfaceCapabilities.currentTransform;
+    swapChainInfo.preTransform = swapchainDetails_.surfaceCapabilities.currentTransform;
     swapChainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     swapChainInfo.clipped = VK_TRUE;
     swapChainInfo.oldSwapchain = VK_NULL_HANDLE;
@@ -583,8 +577,8 @@ void Engine::createDescriptorSetLayout()
 void Engine::createGraphicsPipeline()
 {
     LOG_INFO("Creating Graphics Pipeline...");
-    auto vertexShader = readFile(std::string(SHADER_PATH) + "/vert.spv");
-    auto fragmentShader = readFile(std::string(SHADER_PATH) + "/frag.spv");
+    auto vertexShader = readFile(std::string(SHADER_PATH) + "/vertex.spv");
+    auto fragmentShader = readFile(std::string(SHADER_PATH) + "/fragment.spv");
 
     VkShaderModule vertexShaderModule = createShaderModule(vertexShader);
     VkShaderModule fragmentShaderModule = createShaderModule(fragmentShader);
@@ -772,8 +766,8 @@ void Engine::createDepthRessources()
 
     utils::transitionImageLayout(logicalDevice_,
                                  indices_,
-                                 getCommandPoolTransfer(),
-                                 getTransfertQueue(),
+                                 getCommandPool(),
+                                 getGraphicsQueue(),
                                  depthImage_,
                                  depthFormat,
                                  VK_IMAGE_LAYOUT_UNDEFINED,
@@ -800,8 +794,8 @@ void Engine::createColorRessources()
     colorImageView_ = utils::createImageView(logicalDevice_, format, colorImage_, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     utils::transitionImageLayout(logicalDevice_,
                                  indices_,
-                                 getCommandPoolTransfer(),
-                                 getTransfertQueue(),
+                                 getCommandPool(),
+                                 getGraphicsQueue(),
                                  colorImage_,
                                  format,
                                  VK_IMAGE_LAYOUT_UNDEFINED,
@@ -985,12 +979,12 @@ void Engine::createDescriptorSets()
         descBufferInfo.offset = 0;
         descBufferInfo.range = sizeof(UniformBufferObject);
 
-        VkDescriptorImageInfo imageInfo = {};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = lenaTexture_.getImageView();
-        imageInfo.sampler = lenaTexture_.getSampler();
+        // VkDescriptorImageInfo imageInfo = {};
+        // imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        // imageInfo.imageView = lenaTexture_.getImageView();
+        // imageInfo.sampler = lenaTexture_.getSampler();
 
-        std::array<VkWriteDescriptorSet, 2> writeInfos = {};
+        std::array<VkWriteDescriptorSet, 1> writeInfos = {};
         writeInfos[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writeInfos[0].dstSet = descriptorSets_[i];
         writeInfos[0].dstBinding = 0; // binding index in "layout(binding = 0)"
@@ -999,13 +993,13 @@ void Engine::createDescriptorSets()
         writeInfos[0].descriptorCount = 1; // We can update multiple descriptor at once in an array
         writeInfos[0].pBufferInfo = &descBufferInfo;
 
-        writeInfos[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeInfos[1].dstSet = descriptorSets_[i];
-        writeInfos[1].dstBinding = 1; // binding index in "layout(binding = 0)"
-        writeInfos[1].dstArrayElement = 0;
-        writeInfos[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writeInfos[1].descriptorCount = 1; // We can update multiple descriptor at once in an array
-        writeInfos[1].pImageInfo = &imageInfo;
+        // writeInfos[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        // writeInfos[1].dstSet = descriptorSets_[i];
+        // writeInfos[1].dstBinding = 1; // binding index in "layout(binding = 0)"
+        // writeInfos[1].dstArrayElement = 0;
+        // writeInfos[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        // writeInfos[1].descriptorCount = 1; // We can update multiple descriptor at once in an array
+        // writeInfos[1].pImageInfo = &imageInfo;
 
         vkUpdateDescriptorSets(logicalDevice_, static_cast<uint32_t>(writeInfos.size()), writeInfos.data(), 0, nullptr);
     }
@@ -1232,6 +1226,7 @@ void Engine::cleanUpSwapChain()
 
 void Engine::cleanup()
 {
+    vkDeviceWaitIdle(logicalDevice_);
     if(!isCleaned_)
     {
         isCleaned_ = true;
@@ -1241,7 +1236,7 @@ void Engine::cleanup()
         vkDestroyDescriptorPool(logicalDevice_, descriptorPool_, nullptr);
         vkDestroyDescriptorSetLayout(logicalDevice_, descriptorSetLayout_, nullptr);
 
-        lenaTexture_.destroy();
+        // lenaTexture_.destroy();
 
         // Vertex/Uniform/Index buffers
         for(size_t i = 0; i < swapchainData_.images.size(); i++)

@@ -6,7 +6,7 @@
 
 namespace engine::debug
 {
-static constexpr std::array<const char*, 1> VALIDATION_LAYERS = {"VK_LAYER_LUNARG_standard_validation"};
+static constexpr std::array<const char*, 1> VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validation"};
 /*  @brief : Function callBack, called when a debug message coming from vulkan
  *   @param messageSeverity :
  *       VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
@@ -28,7 +28,7 @@ static constexpr std::array<const char*, 1> VALIDATION_LAYERS = {"VK_LAYER_LUNAR
  *       A pointer specified during the setup of the callBack. It could be
  * anything !
  */
-static VKAPI_ATTR VkBool32 VKAPI_CALL defaultDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+VKAPI_ATTR VkBool32 VKAPI_CALL defaultDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                                                            VkDebugUtilsMessageTypeFlagsEXT messageType,
                                                            const VkDebugUtilsMessengerCallbackDataEXT* pCallBackData,
                                                            void* pUserData);

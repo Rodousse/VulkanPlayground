@@ -86,7 +86,6 @@ class Engine
     VkQueue transfertQueue_;
 
     VkExtent2D windowExtent_;
-    SwapchainSupportDetails swapchainSupportDetails_;
 
     VkRenderPass renderPass_;
     VkDescriptorSetLayout descriptorSetLayout_;
@@ -133,7 +132,7 @@ class Engine
     /******************************************* APPLICATION VARIABLE
      * ******************************************************/
 
-    MaterialTexture lenaTexture_;
+//    MaterialTexture lenaTexture_;
     std::shared_ptr<Camera> camera_;
     Mesh mesh_;
     ApplicationStateChange applicationChanges_;
@@ -191,7 +190,6 @@ class Engine
     void chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availableModes);
     void chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 
-    void cleanup();
 
   public:
     Engine();
@@ -204,6 +202,7 @@ class Engine
      * ******************************************************/
 
     void createInstance();
+    VkInstance getInstance();
     void addRequiredExtensions(const char** extensions, uint32_t extensionCount);
     void setSurface(const VkSurfaceKHR& surface);
     void initVulkan();
@@ -214,6 +213,7 @@ class Engine
     void setModel(const Mesh& model);
 
     void drawFrame();
+    void cleanup();
 
     /***********************************************************************************************************************/
 
