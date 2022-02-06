@@ -65,7 +65,7 @@ class Engine
     const int MAX_FRAMES_IN_FLIGHT = 2;
     VkInstance instance_;
     std::vector<const char*> requiredExtensions_;
-    VkPhysicalDeviceFeatures requiredDeviceFeatures_;
+    VkPhysicalDeviceFeatures requiredDeviceFeatures_{};
 
     SwapchainSupportDetails swapchainDetails_;
 
@@ -105,10 +105,6 @@ class Engine
     std::vector<VkFence> inFlightFences_;
     size_t currentFrame_ = 0;
 
-    VkBuffer vertexBuffer_;
-    VkDeviceMemory vertexBufferMemory_;
-    VkBuffer vertexIndexBuffer_;
-    VkDeviceMemory vertexIndexBufferMemory_;
     std::vector<VkBuffer> uniformBuffers_;
     std::vector<VkDeviceMemory> uniformBuffersMemory_;
 

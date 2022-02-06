@@ -31,15 +31,17 @@ VkPhysicalDevice getBestPhysicalDevice(VkInstance instance,
 } // namespace
 namespace engine
 {
-Engine::Engine(): requiredDeviceFeatures_{}
+Engine::Engine()
 {
     requiredDeviceFeatures_.sampleRateShading = VK_TRUE;
-    auto scene = IO::loadScene("/home/rodousse/dev/VulkanPlayground/repo/resources/meshes/bunny/reconstruction/bun_zipper.ply");
+    auto scene =
+      IO::loadScene("/home/rodousse/dev/VulkanPlayground/repo/resources/meshes/bunny/reconstruction/bun_zipper.ply");
     if(!scene)
     {
-      THROW(std::runtime_error("Could not load the mesh"));
+        THROW(std::runtime_error("Could not load the mesh"));
     }
     mesh_ = scene->meshes[0];
+    camera_ = std::move(scene->cameras.front());
     if constexpr(ENABLE_VALIDATION_LAYERS)
     {
         requiredExtensions_.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -248,9 +250,14 @@ VkInstance Engine::getInstance()
 
 void Engine::resizeExtent(int width, int height)
 {
+    if(windowExtent_.width == width && windowExtent_.height == height)
+    {
+        return;
+    }
     framebufferResize = true;
     windowExtent_.width = width;
     windowExtent_.height = height;
+    camera_->setViewportDimensions(width, height);
     swapchainDetails_ = querySwapChainSupport(physicalDevice_, surface_); // Used for querySwapChainSupport
 }
 
@@ -618,8 +625,8 @@ void Engine::createGraphicsPipeline()
     viewport_ = {};
     viewport_.x = 0;
     viewport_.y = 0;
-    viewport_.width = (float)swapchainData_.extent.width;
-    viewport_.height = (float)swapchainData_.extent.height;
+    viewport_.width = static_cast<float>(swapchainData_.extent.width);
+    viewport_.height = static_cast<float>(swapchainData_.extent.height);
     viewport_.minDepth = 0.0f;
     viewport_.maxDepth = 1.0f;
 
@@ -806,7 +813,8 @@ void Engine::createColorRessources()
 void Engine::recreateCommandBuffer()
 {
     vkDeviceWaitIdle(logicalDevice_);
-    vkFreeCommandBuffers(logicalDevice_, commandPool_, (uint32_t)commandBuffers_.size(), commandBuffers_.data());
+    vkFreeCommandBuffers(
+      logicalDevice_, commandPool_, static_cast<uint32_t>(commandBuffers_.size()), commandBuffers_.data());
     createCommandBuffers();
 }
 
@@ -836,10 +844,10 @@ void Engine::createVertexBuffer()
                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                         memoryProperties_,
-                        vertexBuffer_,
-                        vertexBufferMemory_);
+                        meshData_.vertexBuffer,
+                        meshData_.vertexBufferMemory);
     utils::copyBuffer(
-      logicalDevice_, getCommandPoolTransfer(), getTransfertQueue(), stagingBuffer, vertexBuffer_, bufferSize);
+      logicalDevice_, getCommandPoolTransfer(), getTransfertQueue(), stagingBuffer, meshData_.vertexBuffer, bufferSize);
 
     vkDestroyBuffer(logicalDevice_, stagingBuffer, nullptr);
     vkFreeMemory(logicalDevice_, stagingBufferMemory, nullptr);
@@ -872,10 +880,10 @@ void Engine::createVertexIndexBuffer()
                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                         memoryProperties_,
-                        vertexIndexBuffer_,
-                        vertexIndexBufferMemory_);
+                        meshData_.indexBuffer,
+                        meshData_.indexBufferMemory);
     utils::copyBuffer(
-      logicalDevice_, getCommandPoolTransfer(), getTransfertQueue(), stagingBuffer, vertexIndexBuffer_, bufferSize);
+      logicalDevice_, getCommandPoolTransfer(), getTransfertQueue(), stagingBuffer, meshData_.indexBuffer, bufferSize);
 
     vkDestroyBuffer(logicalDevice_, stagingBuffer, nullptr);
     vkFreeMemory(logicalDevice_, stagingBufferMemory, nullptr);
@@ -1098,6 +1106,8 @@ void Engine::createSyncObjects()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         VK_CALL(vkCreateSemaphore(logicalDevice_, &semaphoreInfo, nullptr, &imageAvailableSemaphore_[i]));
+        VK_CALL(vkCreateSemaphore(logicalDevice_, &semaphoreInfo, nullptr, &renderFinishedSemaphore_[i]));
+        VK_CALL(vkCreateFence(logicalDevice_, &fenceInfo, nullptr, &inFlightFences_[i]));
     }
     LOG_INFO("Synchronization Objects Created");
 }
@@ -1226,7 +1236,6 @@ void Engine::cleanUpSwapChain()
 
 void Engine::cleanup()
 {
-    vkDeviceWaitIdle(logicalDevice_);
     if(!isCleaned_)
     {
         isCleaned_ = true;

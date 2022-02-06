@@ -276,12 +276,6 @@ void transitionImageLayout(VkDevice device,
 
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
-        if(indices.transferAvailable())
-        {
-            barrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.graphicsFamily);
-            barrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.transferFamily);
-        }
     }
     else if(oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
@@ -291,12 +285,6 @@ void transitionImageLayout(VkDevice device,
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-
-        if(indices.transferAvailable())
-        {
-            barrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.graphicsFamily);
-            barrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.transferFamily);
-        }
     }
     else if(oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     {
@@ -305,12 +293,6 @@ void transitionImageLayout(VkDevice device,
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-        if(indices.transferAvailable())
-        {
-            barrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.graphicsFamily);
-            barrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.transferFamily);
-        }
     }
     else
     {

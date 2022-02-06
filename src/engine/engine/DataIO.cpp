@@ -57,6 +57,9 @@ std::optional<Scene> loadScene(const std::filesystem::path& path)
             }
         }
     }
+    else {
+        scene.cameras.emplace_back(createDefaultCamera(scene));
+    }
 
     return scene;
 }
@@ -181,6 +184,15 @@ std::unique_ptr<engine::Camera> loadCamera(const aiScene* assimpScene, uint32_t 
                    {forward.x, forward.y, forward.z},
                    {aiCamera->mUp.x, aiCamera->mUp.y, aiCamera->mUp.z});
     return camera;
+}
+
+std::unique_ptr<engine::Camera> createDefaultCamera(const engine::Scene& scene)
+{
+  auto camera = std::make_unique<engine::PerspectiveCamera>();
+  auto sceneCenter = (scene.aabb.max + scene.aabb.min) / 2.0F;
+  camera->lookAt(scene.aabb.max, sceneCenter, Vector3{0.0, 0.0, 1.0});
+  return camera;
+
 }
 
 } // namespace

@@ -36,6 +36,9 @@ int main()
     while(!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
+        int width, height;
+        glfwGetWindowSize(window, &width, &height);
+        renderer.resizeExtent(width, height);
         renderer.drawFrame();
     }
     renderer.cleanup();
