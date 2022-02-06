@@ -10,7 +10,7 @@ namespace engine
 {
 void Camera::refreshPosition()
 {
-    m_view.block<3, 1>(0, 3) = Vector3{-m_right.dot(m_position), -m_up.dot(m_position), -m_forward.dot(m_position)};
+    m_view.block<3, 1>(0, 3) = Vector3{-m_right.dot(m_position), -m_up.dot(m_position), m_forward.dot(m_position)};
 }
 
 void Camera::refreshRotation()
@@ -35,7 +35,7 @@ void Camera::lookAt(const Vector3& position, const Vector3& center, const Vector
 
     m_rotation.row(0) = m_right;
     m_rotation.row(1) = m_up;
-    m_rotation.row(2) = m_forward;
+    m_rotation.row(2) = -m_forward;
 
     refreshRotation();
     refreshPosition();
@@ -43,7 +43,7 @@ void Camera::lookAt(const Vector3& position, const Vector3& center, const Vector
 
 void Camera::setViewportDimensions(Eigen::Vector2i dim)
 {
-    m_viewportDim = dim;
+    m_viewportDim = std::move(dim);
     refreshProjection();
 }
 void Camera::setViewportDimensions(int width, int height)

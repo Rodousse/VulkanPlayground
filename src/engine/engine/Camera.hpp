@@ -14,8 +14,8 @@ class ENGINE_API Camera
     Matrix3 m_rotation = Matrix3::Identity();
 
     // Frustum information
-    float m_nearClipPlane = 0.1f;
-    float m_farClipPlane = 100.0f;
+    float m_nearClipPlane = 0.001f;
+    float m_farClipPlane = 1000.0f;
 
     Matrix4 m_view = Matrix4::Identity();
     Matrix4 m_proj = Matrix4::Identity();
