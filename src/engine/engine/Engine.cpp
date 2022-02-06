@@ -34,8 +34,7 @@ namespace engine
 Engine::Engine()
 {
     requiredDeviceFeatures_.sampleRateShading = VK_TRUE;
-    auto scene =
-      IO::loadScene("/home/rodousse/dev/VulkanPlayground/repo/resources/meshes/bunny/reconstruction/bun_zipper.ply");
+    auto scene = IO::loadScene(MESH_PATH);
     if(!scene)
     {
         THROW(std::runtime_error("Could not load the mesh"));

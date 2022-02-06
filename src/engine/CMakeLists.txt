@@ -41,4 +41,4 @@ endif()
 
 target_compile_definitions(engine PUBLIC ${ENGINE_STATIC_FLAG} _USE_MATH_DEFINES _ENABLE_EXTENDED_ALIGNED_STORAGE PRIVATE ENGINE_EXPORT)
 target_compile_shaders(engine "${SHADER_SRC_DIR}/vertex.vert;${SHADER_SRC_DIR}/fragment.frag")
-target_compile_definitions(engine PRIVATE -DSHADER_PATH="${SHADER_BINARY_DIR}")
+target_compile_definitions(engine PRIVATE -DMESH_PATH="${RESOURCE_DIR}/meshes/bunny.ply" -DSHADER_PATH="${SHADER_BINARY_DIR}")
