@@ -14,7 +14,9 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <imgui_impl_vulkan.h>
 #include <set>
+#include <vulkan/vulkan_core.h>
 
 namespace
 {
@@ -74,6 +76,7 @@ void Engine::drawFrame()
     }
 
     updateUniformBuffer(imageIndex);
+    updatePrimaryCommandBuffers();
 
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -148,8 +151,10 @@ void Engine::initVulkan()
     createUniformBuffer();
     createDescriptorPool();
     createDescriptorSets();
-    createCommandBuffers();
+    createPrimaryCommandBuffer();
+    createSecondaryCommandBuffers();
     createSyncObjects();
+    initImgui();
 
     LOG_INFO("Vulkan Initialisation Finished");
 }
@@ -489,35 +494,53 @@ void Engine::createRenderPass()
     colorAttachmentResolveRef.attachment = 2;
     colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
+    std::array<VkSubpassDescription, 2> subpasses = {};
+    subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpasses[0].colorAttachmentCount = 1;
     // The index of the  attachement is the directive from :
     // layout(location = "index") out vec4 color;
-    subpass.pColorAttachments = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-    subpass.pResolveAttachments = &colorAttachmentResolveRef;
+    subpasses[0].pColorAttachments = &colorAttachmentRef;
+    subpasses[0].pDepthStencilAttachment = &depthAttachmentRef;
+    subpasses[0].pResolveAttachments = &colorAttachmentResolveRef;
 
-    VkSubpassDependency subPassDep = {};
-    subPassDep.srcSubpass = VK_SUBPASS_EXTERNAL; // Refers to the implicit subpass before the render pass (It it was in
-                                                 // dstSubpass would be after the render pass)
-    subPassDep.dstSubpass = 0;
-    subPassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // Wait for the swap chain to read the
-                                                                             // image
-    subPassDep.srcAccessMask = 0;
+    subpasses[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpasses[1].colorAttachmentCount = 1;
+    // The index of the  attachement is the directive from :
+    // layout(location = "index") out vec4 color;
+    subpasses[1].pColorAttachments = &colorAttachmentRef;
+    subpasses[1].pDepthStencilAttachment = &depthAttachmentRef;
+    subpasses[1].pResolveAttachments = &colorAttachmentResolveRef;
+
+    std::array<VkSubpassDependency, 2> subPassDep = {};
+    subPassDep[0].srcSubpass = VK_SUBPASS_EXTERNAL; // Refers to the implicit subpass before the render pass (It it was
+                                                    // in dstSubpass would be after the render pass)
+    subPassDep[0].dstSubpass = 0;
+    subPassDep[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // Wait for the swap chain to read the
+                                                                                // image
+    subPassDep[0].srcAccessMask = 0;
     // The operation which should wait this subpass are read and write operation on color attachement
-    subPassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subPassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    subPassDep[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subPassDep[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    subPassDep[1].srcSubpass = 0; // Refers to the implicit subpass before the render pass (It it was
+                                  // in dstSubpass would be after the render pass)
+    subPassDep[1].dstSubpass = 1;
+    subPassDep[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // Wait for the swap chain to read the
+                                                                                // image
+    subPassDep[1].srcAccessMask = 0;
+    // The operation which should wait this subpass are read and write operation on color attachement
+    subPassDep[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subPassDep[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     std::array<VkAttachmentDescription, 3> attachments = {colorAttachment, depthAttachment, colorAttachmentResolve};
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
     renderPassInfo.pAttachments = attachments.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &subPassDep;
+    renderPassInfo.subpassCount = subpasses.size();
+    renderPassInfo.pSubpasses = subpasses.data();
+    renderPassInfo.dependencyCount = subPassDep.size();
+    renderPassInfo.pDependencies = subPassDep.data();
 
     VK_CALL(vkCreateRenderPass(logicalDevice_, &renderPassInfo, nullptr, &renderPass_));
 
@@ -739,6 +762,7 @@ void Engine::createCommandPool()
     VkCommandPoolCreateInfo commandPoolInfo = {};
     commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     commandPoolInfo.queueFamilyIndex = indices_.graphicsFamily;
+    commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     VK_CALL(vkCreateCommandPool(logicalDevice_, &commandPoolInfo, nullptr, &commandPool_));
 
@@ -808,13 +832,64 @@ void Engine::createColorRessources()
                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                  1);
 }
+void Engine::initImgui()
+{
+    {
+        VkDescriptorPoolSize pool_sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+                                             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+                                             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+                                             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+                                             {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+                                             {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+                                             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+                                             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+                                             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+                                             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+                                             {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
+        VkDescriptorPoolCreateInfo pool_info = {};
+        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pool_info.maxSets = 1000 * IM_ARRAYSIZE(pool_sizes);
+        pool_info.poolSizeCount = static_cast<uint32_t>(IM_ARRAYSIZE(pool_sizes));
+        pool_info.pPoolSizes = pool_sizes;
+        VK_CALL(vkCreateDescriptorPool(logicalDevice_, &pool_info, nullptr, &imguiDescriptorPool_));
+    }
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = instance_;
+    init_info.PhysicalDevice = physicalDevice_;
+    init_info.Device = logicalDevice_;
+    init_info.QueueFamily = indices_.graphicsFamily;
+    init_info.Queue = getGraphicsQueue();
+    init_info.PipelineCache = VK_NULL_HANDLE;
+    init_info.DescriptorPool = imguiDescriptorPool_;
+    init_info.Subpass = 1;
+    init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
+    init_info.ImageCount = swapchainData_.images.size();
+    init_info.MSAASamples = getMaxUsableSampleCount();
+    init_info.Allocator = VK_NULL_HANDLE;
+    init_info.CheckVkResultFn = nullptr;
+    ImGui_ImplVulkan_Init(&init_info, renderPass_);
+    // Upload Fonts
+    {
+        // Use any command queue
+        auto command = utils::beginSingleTimeCommands(logicalDevice_, getCommandPool());
+        ImGui_ImplVulkan_CreateFontsTexture(command);
+        utils::endSingleTimeCommands(logicalDevice_, getCommandPool(), getGraphicsQueue(), command);
+        ImGui_ImplVulkan_DestroyFontUploadObjects();
+    }
+}
 
 void Engine::recreateCommandBuffer()
 {
     vkDeviceWaitIdle(logicalDevice_);
     vkFreeCommandBuffers(
       logicalDevice_, commandPool_, static_cast<uint32_t>(commandBuffers_.size()), commandBuffers_.data());
-    createCommandBuffers();
+    vkFreeCommandBuffers(logicalDevice_,
+                         commandPool_,
+                         static_cast<uint32_t>(commandBufferSecondary_.size()),
+                         commandBufferSecondary_.data());
+    createPrimaryCommandBuffer();
+    createSecondaryCommandBuffers();
 }
 
 void Engine::createVertexBuffer()
@@ -1018,74 +1093,120 @@ void Engine::createDescriptorSets()
  *           We have a command buffer for every image views in the swapchain
  *           to render each one of them
  */
-void Engine::createCommandBuffers()
+void Engine::createSecondaryCommandBuffers()
 {
     LOG_INFO("Creating and Recording Command Buffers...");
-    commandBuffers_.resize(swapchainData_.framebuffers.size());
 
+    // Secondary command buffer
+    commandBufferSecondary_.resize(swapchainData_.framebuffers.size());
+    VkCommandBufferAllocateInfo allocateBufferInfo = {};
+    allocateBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocateBufferInfo.commandPool = commandPool_;
+    allocateBufferInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+    allocateBufferInfo.commandBufferCount = commandBufferSecondary_.size();
+
+    VK_CALL(vkAllocateCommandBuffers(logicalDevice_, &allocateBufferInfo, commandBufferSecondary_.data()));
+    VkCommandBufferBeginInfo commandBeginInfo = {};
+    commandBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    commandBeginInfo.flags =
+      VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+    for(std::size_t i = 0; i < commandBuffers_.size(); ++i)
+    {
+        VkCommandBufferInheritanceInfo inheritanceInfo{};
+        inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        inheritanceInfo.framebuffer = swapchainData_.framebuffers[i];
+        inheritanceInfo.renderPass = renderPass_;
+        inheritanceInfo.subpass = 0;
+        inheritanceInfo.occlusionQueryEnable = VK_FALSE;
+        inheritanceInfo.queryFlags = 0;
+        inheritanceInfo.pipelineStatistics = 0;
+        commandBeginInfo.pInheritanceInfo = &inheritanceInfo;
+
+        VK_CALL(vkBeginCommandBuffer(commandBufferSecondary_[i], &commandBeginInfo));
+
+        {
+            vkCmdSetViewport(commandBufferSecondary_[i], 0, 1, &viewport_);
+            vkCmdBindPipeline(commandBufferSecondary_[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline_);
+
+            VkBuffer vertexBuffers[] = {meshData_.vertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBufferSecondary_[i], 0, 1, vertexBuffers, offsets);
+
+            vkCmdBindIndexBuffer(commandBufferSecondary_[i], meshData_.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(commandBufferSecondary_[i],
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineLayout_,
+                                    0,
+                                    1,
+                                    &descriptorSets_[0],
+                                    0,
+                                    nullptr);
+
+            // 1 used for the instanced rendering could be higher i think for multiple instanced
+            vkCmdDrawIndexed(commandBufferSecondary_[i], static_cast<uint32_t>(mesh_.faces.size() * 3), 1, 0, 0, 0);
+        }
+        VK_CALL(vkEndCommandBuffer(commandBufferSecondary_[i]));
+    }
+
+    LOG_INFO("Command Buffers Created");
+}
+
+void Engine::createPrimaryCommandBuffer()
+{
+    commandBuffers_.resize(swapchainData_.framebuffers.size());
     VkCommandBufferAllocateInfo allocateBufferInfo = {};
     allocateBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocateBufferInfo.commandPool = commandPool_;
     allocateBufferInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; // Can be submitted to queue, and SECONDARY can be
                                                                 // called inside a primary command buffer
-    allocateBufferInfo.commandBufferCount = (uint32_t)commandBuffers_.size();
+    allocateBufferInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers_.size());
 
     VK_CALL(vkAllocateCommandBuffers(logicalDevice_, &allocateBufferInfo, commandBuffers_.data()));
+}
 
-    // For every command buffer we begin recording it, but we have to specify how
-    for(size_t i = 0; i < commandBuffers_.size(); i++)
+void Engine::updatePrimaryCommandBuffers()
+{
+    for(std::size_t i = 0; i < commandBuffers_.size(); ++i)
     {
         VkCommandBufferBeginInfo commandBeginInfo = {};
         commandBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        commandBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT; // We can resubmit the command buffer
-                                                                               // while it's already pending execution
+        commandBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         commandBeginInfo.pInheritanceInfo = nullptr;
-
-        VK_CALL(vkBeginCommandBuffer(commandBuffers_[i], &commandBeginInfo));
 
         std::array<VkClearValue, 2> clearValues = {};
         clearValues[0].color = {1.0f, (153.0f / 255.0f), (51.0f / 255.0f), 1.0f};
         clearValues[1].depthStencil = {1.0, 0};
 
-        VkRenderPassBeginInfo renderBeginInfo = {};
-        renderBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-        renderBeginInfo.pClearValues = clearValues.data();
-        renderBeginInfo.renderPass = renderPass_;
-        renderBeginInfo.framebuffer = swapchainData_.framebuffers[i];
-        renderBeginInfo.renderArea.extent = swapchainData_.extent;
-        renderBeginInfo.renderArea.offset = {0, 0};
+        VkRenderPassBeginInfo renderPassBeginInfo{};
+        renderPassBeginInfo.renderPass = renderPass_;
+        renderPassBeginInfo.framebuffer = swapchainData_.framebuffers[i];
+        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassBeginInfo.renderArea.offset.x = 0;
+        renderPassBeginInfo.renderArea.offset.y = 0;
+        renderPassBeginInfo.renderArea.extent = swapchainData_.extent;
+        renderPassBeginInfo.clearValueCount = clearValues.size();
+        renderPassBeginInfo.pClearValues = clearValues.data();
 
-        vkCmdBeginRenderPass(commandBuffers_[i],
-                             &renderBeginInfo,
-                             VK_SUBPASS_CONTENTS_INLINE); // Last parameter used to embedd the command for a primary
-                                                          // command buffer or secondary
+        VK_CALL(vkBeginCommandBuffer(commandBuffers_[i], &commandBeginInfo));
         {
-            vkCmdBindPipeline(commandBuffers_[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline_);
+            vkCmdBeginRenderPass(
+              commandBuffers_[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-            VkBuffer vertexBuffers[] = {meshData_.vertexBuffer};
-            VkDeviceSize offsets[] = {0};
-            vkCmdBindVertexBuffers(commandBuffers_[i], 0, 1, vertexBuffers, offsets);
+            vkCmdExecuteCommands(commandBuffers_[i], 1, &commandBufferSecondary_[i]);
 
-            vkCmdBindIndexBuffer(commandBuffers_[i], meshData_.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdBindDescriptorSets(commandBuffers_[i],
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout_,
-                                    0,
-                                    1,
-                                    &descriptorSets_[i],
-                                    0,
-                                    nullptr);
+            vkCmdNextSubpass(commandBuffers_[i], VK_SUBPASS_CONTENTS_INLINE);
+            ImDrawData* draw_data = ImGui::GetDrawData();
+            const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
+            if(!is_minimized)
+            {
+                ImGui_ImplVulkan_RenderDrawData(draw_data, commandBuffers_[i]);
+            }
 
-            // 1 used for the instanced rendering could be higher i think for multiple instanced
-            vkCmdDrawIndexed(commandBuffers_[i], static_cast<uint32_t>(mesh_.faces.size() * 3), 1, 0, 0, 0);
+            vkCmdEndRenderPass(commandBuffers_[i]);
         }
-        vkCmdEndRenderPass(commandBuffers_[i]);
 
         VK_CALL(vkEndCommandBuffer(commandBuffers_[i]));
     }
-
-    LOG_INFO("Command Buffers Created");
 }
 
 void Engine::createSyncObjects()
@@ -1201,7 +1322,8 @@ void Engine::recreateSwapChain()
     createDepthRessources();
     createColorRessources();
     createFramebuffers(renderPass_, {colorImageView_, depthImageView_});
-    createCommandBuffers();
+    createPrimaryCommandBuffer();
+    createSecondaryCommandBuffers();
 }
 
 void Engine::cleanUpSwapChain()
@@ -1211,6 +1333,7 @@ void Engine::cleanUpSwapChain()
         vkDestroyFramebuffer(logicalDevice_, framebuffer, nullptr);
     }
 
+    vkFreeCommandBuffers(logicalDevice_, commandPool_, commandBufferSecondary_.size(), commandBufferSecondary_.data());
     vkFreeCommandBuffers(logicalDevice_, commandPool_, commandBuffers_.size(), commandBuffers_.data());
 
     vkDestroyImageView(logicalDevice_, depthImageView_, nullptr);
@@ -1242,6 +1365,7 @@ void Engine::cleanup()
 
         // Descriptor Set/Pool
         vkDestroyDescriptorPool(logicalDevice_, descriptorPool_, nullptr);
+        vkDestroyDescriptorPool(logicalDevice_, imguiDescriptorPool_, nullptr);
         vkDestroyDescriptorSetLayout(logicalDevice_, descriptorSetLayout_, nullptr);
 
         // lenaTexture_.destroy();

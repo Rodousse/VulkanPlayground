@@ -90,6 +90,7 @@ class Engine
     VkRenderPass renderPass_;
     VkDescriptorSetLayout descriptorSetLayout_;
     VkDescriptorPool descriptorPool_;
+    VkDescriptorPool imguiDescriptorPool_;
     std::vector<VkDescriptorSet> descriptorSets_;
     VkPipelineLayout pipelineLayout_;
     VkPipeline graphicsPipeline_;
@@ -97,6 +98,7 @@ class Engine
 
     VkCommandPool commandPool_;
     VkCommandPool commandPoolTransfert_;
+    std::vector<VkCommandBuffer> commandBufferSecondary_;
     std::vector<VkCommandBuffer> commandBuffers_;
 
     // used to synchronise the image to show
@@ -128,7 +130,7 @@ class Engine
     /******************************************* APPLICATION VARIABLE
      * ******************************************************/
 
-//    MaterialTexture lenaTexture_;
+    //    MaterialTexture lenaTexture_;
     std::shared_ptr<Camera> camera_;
     Mesh mesh_;
     ApplicationStateChange applicationChanges_;
@@ -150,8 +152,12 @@ class Engine
     void createFramebuffers(VkRenderPass renderPass, const std::vector<VkImageView>& attachements);
     void createCommandPool();
     void createCommandBuffers();
+    void createSecondaryCommandBuffers();
+    void createPrimaryCommandBuffer();
+    void updatePrimaryCommandBuffers();
     void createDepthRessources();
     void createColorRessources();
+    void initImgui();
 
     void recreateCommandBuffer();
 
@@ -185,7 +191,6 @@ class Engine
     void chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
     void chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availableModes);
     void chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-
 
   public:
     Engine();
