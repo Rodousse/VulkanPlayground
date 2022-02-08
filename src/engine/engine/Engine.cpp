@@ -1004,7 +1004,7 @@ void Engine::updateUniformBuffer(uint32_t imageIndex)
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = 2 * std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
-    ubo.lightPos = Vector3(4 * cos(time), 4 * sin(time), 3);
+    ubo.lightPos = Vector3(4 * cos(time), 3, 4 * sin(time));
 
     void* pData;
 

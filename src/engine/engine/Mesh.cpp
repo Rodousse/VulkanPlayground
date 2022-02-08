@@ -17,8 +17,8 @@ void Mesh::refreshBoundingBox()
 {
     for(const auto& vertex: vertices)
     {
-        aabb.min = aabb.min.cwiseMin(vertex.pos).eval();
-        aabb.max = aabb.max.cwiseMax(vertex.pos).eval();
+        aabb.min = aabb.min.cwiseMin(vertex.pos);
+        aabb.max = aabb.max.cwiseMax(vertex.pos);
     }
 }
 

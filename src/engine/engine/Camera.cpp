@@ -35,7 +35,7 @@ void Camera::lookAt(const Vector3& position, const Vector3& center, const Vector
 
     m_rotation.row(0) = m_right;
     m_rotation.row(1) = m_up;
-    m_rotation.row(2) = -m_forward;
+    m_rotation.row(2) = m_forward;
 
     refreshRotation();
     refreshPosition();

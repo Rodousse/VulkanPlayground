@@ -154,7 +154,7 @@ std::unique_ptr<engine::Camera> loadCamera(const aiScene* assimpScene, uint32_t 
     const auto* aiCamera = assimpScene->mCameras[camIndex];
     if(aiCamera == nullptr)
     {
-        return std::unique_ptr<engine::Camera>(nullptr);
+        return nullptr;
     }
     aiNode* cameraNode = assimpScene->mRootNode->FindNode(aiCamera->mName);
     aiMatrix4x4 cameraTransform = cameraNode->mTransformation;
@@ -191,9 +191,9 @@ std::unique_ptr<engine::Camera> createDefaultCamera(const engine::Scene& scene)
 {
     auto camera = std::make_unique<engine::PerspectiveCamera>();
     auto diag = scene.aabb.max - scene.aabb.min;
-    auto diagLength = diag.norm();
     auto sceneCenter = (scene.aabb.max + scene.aabb.min) / 2.0F;
-    camera->lookAt(scene.aabb.max, sceneCenter, Vector3{0.0, 0.0, 1.0});
+    camera->lookAt(scene.aabb.max, sceneCenter, Vector3{0.0, 1.0, 0.0});
+    camera->setFovRad(M_PI / 2.0F);
     return camera;
 }
 

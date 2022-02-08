@@ -5,7 +5,7 @@ namespace engine
 {
 class ENGINE_API PerspectiveCamera : public Camera
 {
-  protected:
+  private:
     float m_fov = M_PI / 2.0f;
     void refreshProjection() override;
 
@@ -15,7 +15,7 @@ class ENGINE_API PerspectiveCamera : public Camera
 
     void setFovDeg(float deg);
     void setFovRad(float rad);
-    float fov() const;
+    [[nodiscard]] float fov() const;
 };
 
 } // namespace engine

@@ -30,7 +30,7 @@ void main()
     vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
     mat3 normalMatrix = transpose(inverse(mat3(ubo.model))); //Prevent Normal deformation from non uniform model matrice
 
-    lightDir = ubo.lightPos - worldPos.xyz;
+    lightDir = normalize(ubo.lightPos - worldPos.xyz);
     camDir = (inverse(ubo.view)*vec4(0.0,0.0,0.0,1.0) - worldPos).xyz;
     fragNormal = normalize(normalMatrix * inNormal);
     fragTexCoord = inTexCoord;
