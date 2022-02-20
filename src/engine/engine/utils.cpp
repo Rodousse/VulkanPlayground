@@ -30,7 +30,7 @@ VkImageView createImageView(VkDevice device,
     return imageView;
 }
 
-VkSampleCountFlagBits getMaxUsableSampleCount(VkPhysicalDeviceProperties deviceProperties)
+VkSampleCountFlagBits getMaxUsableSampleCount(const VkPhysicalDeviceProperties& deviceProperties)
 {
     VkSampleCountFlags counts = std::min(deviceProperties.limits.framebufferColorSampleCounts,
                                          deviceProperties.limits.framebufferDepthSampleCounts);
@@ -69,13 +69,18 @@ bool hasStencilComponent(VkFormat format)
            format == VK_FORMAT_D32_SFLOAT_S8_UINT;
 }
 
-uint32_t findMemoryType(uint32_t typeFilter,
+uint32_t findMemoryType(uint32_t requiredMemoryTypeBits,
                         VkMemoryPropertyFlags properties,
                         const VkPhysicalDeviceMemoryProperties& memoryProperties)
 {
     for(uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++)
     {
-        if(typeFilter & (1U << i) && (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
+        // memoryTypeBits is a bitmask and contains one bit set for every supported memory type for the resource. Bit i
+        // is set if and only if the memory type i in the VkPhysicalDeviceMemoryProperties structure for the physical
+        // device is supported for the resource.:
+        //  https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkMemoryRequirements.html
+        if(requiredMemoryTypeBits & (1U << i) &&
+           (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
         {
             return i;
         }
@@ -218,7 +223,6 @@ void endSingleTimeCommands(VkDevice device, VkCommandPool commandPool, VkQueue q
 }
 
 void transitionImageLayout(VkDevice device,
-                           const QueueFamilyIndices& indices,
                            VkCommandPool commandPool,
                            VkQueue queue,
                            VkImage image,

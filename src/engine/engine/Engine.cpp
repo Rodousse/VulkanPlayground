@@ -796,7 +796,6 @@ void Engine::createDepthRessources()
     m_depthImageView = utils::createImageView(m_logicalDevice, depthFormat, m_depthImage, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
     utils::transitionImageLayout(m_logicalDevice,
-                                 m_indices,
                                  getCommandPool(),
                                  getGraphicsQueue(),
                                  m_depthImage,
@@ -824,7 +823,6 @@ void Engine::createColorRessources()
                        m_colorMemory);
     m_colorImageView = utils::createImageView(m_logicalDevice, format, m_colorImage, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     utils::transitionImageLayout(m_logicalDevice,
-                                 m_indices,
                                  getCommandPool(),
                                  getGraphicsQueue(),
                                  m_colorImage,
