@@ -50,7 +50,7 @@ class Engine
         VkSurfaceFormatKHR format;
         VkExtent2D extent;
         VkPresentModeKHR presentMode;
-    } swapchainData_;
+    } m_swapchainData;
 
     struct MeshData
     {
@@ -58,70 +58,70 @@ class Engine
         VkDeviceMemory vertexBufferMemory;
         VkBuffer indexBuffer;
         VkDeviceMemory indexBufferMemory;
-    } meshData_;
+    } m_meshData;
 
     const std::vector<const char*> DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     const int MAX_FRAMES_IN_FLIGHT = 2;
-    VkInstance instance_;
-    std::vector<const char*> requiredExtensions_;
-    VkPhysicalDeviceFeatures requiredDeviceFeatures_{};
+    VkInstance m_instance;
+    std::vector<const char*> m_requiredExtensions;
+    VkPhysicalDeviceFeatures m_requiredDeviceFeatures{};
 
-    SwapchainSupportDetails swapchainDetails_;
+    SwapchainSupportDetails m_swapchainDetails;
 
-    QueueFamilyIndices indices_;
+    QueueFamilyIndices m_indices;
 
-    VkPhysicalDeviceProperties deviceProperties_;
-    VkPhysicalDeviceMemoryProperties memoryProperties_;
-    VkPhysicalDevice physicalDevice_;
+    VkPhysicalDeviceProperties m_deviceProperties;
+    VkPhysicalDeviceMemoryProperties m_memoryProperties;
+    VkPhysicalDevice m_physicalDevice;
 
-    VkDevice logicalDevice_;
+    VkDevice m_logicalDevice;
 
-    VkDebugUtilsMessengerEXT debugMessenger_;
+    VkDebugUtilsMessengerEXT m_debugMessenger;
 
-    VkSurfaceKHR surface_;
+    VkSurfaceKHR m_surface;
 
-    VkQueue graphicsQueue_;
-    VkQueue presentQueue_;
-    VkQueue transfertQueue_;
+    VkQueue m_graphicsQueue;
+    VkQueue m_presentQueue;
+    VkQueue m_transfertQueue;
 
-    VkExtent2D windowExtent_;
+    VkExtent2D m_windowExtent;
 
-    VkRenderPass renderPass_;
-    VkDescriptorSetLayout descriptorSetLayout_;
-    VkDescriptorPool descriptorPool_;
-    VkDescriptorPool imguiDescriptorPool_;
-    std::vector<VkDescriptorSet> descriptorSets_;
-    VkPipelineLayout pipelineLayout_;
-    VkPipeline graphicsPipeline_;
-    VkViewport viewport_;
+    VkRenderPass m_renderPass;
+    VkDescriptorSetLayout m_descriptorSetLayout;
+    VkDescriptorPool m_descriptorPool;
+    VkDescriptorPool m_imguiDescriptorPool;
+    std::vector<VkDescriptorSet> m_descriptorSets;
+    VkPipelineLayout m_pipelineLayout;
+    VkPipeline m_graphicsPipeline;
+    VkViewport m_viewport;
 
-    VkCommandPool commandPool_;
-    VkCommandPool commandPoolTransfert_;
-    std::vector<VkCommandBuffer> commandBufferSecondary_;
-    std::vector<VkCommandBuffer> commandBuffers_;
+    VkCommandPool m_commandPool;
+    VkCommandPool m_commandPoolTransfert;
+    std::vector<VkCommandBuffer> m_commandBufferSecondary;
+    std::vector<VkCommandBuffer> m_commandBuffers;
 
     // used to synchronise the image to show
-    std::vector<VkSemaphore> imageAvailableSemaphore_; // An image is ready to render
-    std::vector<VkSemaphore> renderFinishedSemaphore_; // An image is rendered and wait to be presented
-    std::vector<VkFence> inFlightFences_;
-    size_t currentFrame_ = 0;
+    std::vector<VkSemaphore> m_imageAvailableSemaphore; // An image is ready to render
+    std::vector<VkSemaphore> m_renderFinishedSemaphore; // An image is rendered and wait to be presented
+    std::vector<VkFence> m_inFlightFences;
+    size_t m_currentFrame = 0;
 
-    std::vector<VkBuffer> uniformBuffers_;
-    std::vector<VkDeviceMemory> uniformBuffersMemory_;
+    std::vector<VkBuffer> m_uniformBuffers;
+    std::vector<VkDeviceMemory> m_uniformBuffersMemory;
 
-    VkImage depthImage_;
-    VkImageView depthImageView_;
-    VkDeviceMemory depthImageMemory_;
+    VkImage m_depthImage;
+    VkImageView m_depthImageView;
+    VkDeviceMemory m_depthImageMemory;
 
-    VkImage colorImage_;
-    VkDeviceMemory colorMemory_;
-    VkImageView colorImageView_;
+    VkImage m_colorImage;
+    VkDeviceMemory m_colorMemory;
+    VkImageView m_colorImageView;
 
-    VkSampleCountFlagBits msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+    VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    bool framebufferResize = false;
-    bool isCleaned_ = true;
+    bool m_framebufferResize = false;
+    bool m_isCleaned = true;
 
     VkResult areInstanceExtensionsCompatible(const char** extensions, uint32_t extensionsCount);
     VkFormat findDepthFormat();
@@ -131,9 +131,9 @@ class Engine
      * ******************************************************/
 
     //    MaterialTexture lenaTexture_;
-    std::shared_ptr<Camera> camera_;
-    Mesh mesh_;
-    ApplicationStateChange applicationChanges_;
+    std::shared_ptr<Camera> m_camera;
+    Mesh m_mesh;
+    ApplicationStateChange m_applicationChanges;
 
     /***********************************************************************************************************************/
 
