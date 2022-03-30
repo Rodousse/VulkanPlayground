@@ -7,6 +7,8 @@
 #include "engine/PhysicalDeviceProperties.hpp"
 #include "engine/assert.hpp"
 #include "engine/descriptor.hpp"
+#include "engine/memoryUtils.hpp"
+#include "engine/typeDefinition.hpp"
 #include "engine/utils.hpp"
 
 #include <algorithm>
@@ -147,8 +149,8 @@ void Engine::initVulkan()
     createColorRessources();
     createFramebuffers(m_renderPass, {m_colorImageView, m_depthImageView});
     // m_lenaTexture.create();
-    createVertexBuffer();
-    createVertexIndexBuffer();
+    createMemoryPools();
+    createVertexAndIndexBuffer();
     createUniformBuffer();
     createDescriptorPool();
     createDescriptorSets();
@@ -891,95 +893,76 @@ void Engine::recreateCommandBuffer()
     createSecondaryCommandBuffers();
 }
 
-void Engine::createVertexBuffer()
+void Engine::createMemoryPools()
 {
-    LOG_INFO("Creating and Allocating Vertex Buffer");
-    VkDeviceSize bufferSize = sizeof(m_mesh.vertices[0]) * m_mesh.vertices.size();
-    VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
+    std::vector<uint32_t> meshMemoryPoolIndices{static_cast<uint32_t>(m_indices.graphicsFamily)};
+    if(m_meshMemoryPool.allocatePool(m_logicalDevice,
+                                     64 * 1 << 20,
+                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                     m_memoryProperties,
+                                     meshMemoryPoolIndices) != MemoryOperationResult::Success)
+    {
+        THROW(std::runtime_error("Could not allocate memory pool"));
+    }
 
-    utils::createBuffer(m_logicalDevice,
-                        m_indices,
-                        bufferSize,
-                        usage,
-                        properties,
-                        m_memoryProperties,
-                        stagingBuffer,
-                        stagingBufferMemory);
-
-    void* pData; // Contains a pointer to the mapped memory
-
-    // Documentation : memory must have been created with a memory type that reports VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-    //                  flags is reserved for future use of the vulkanAPI.
-    vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, bufferSize, 0, &pData);
-    memcpy(pData, m_mesh.vertices.data(), static_cast<std::size_t>(bufferSize));
-    vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
-
-    utils::createBuffer(m_logicalDevice,
-                        m_indices,
-                        bufferSize,
-                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        m_memoryProperties,
-                        m_meshData.vertexBuffer,
-                        m_meshData.vertexBufferMemory);
-    utils::copyBuffer(m_logicalDevice,
-                      getCommandPoolTransfer(),
-                      getTransfertQueue(),
-                      stagingBuffer,
-                      m_meshData.vertexBuffer,
-                      bufferSize);
-
-    vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
-    vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
-    LOG_INFO("Vertex Buffer Created");
+    std::vector<uint32_t> meshTransferMemoryPoolIndices{static_cast<uint32_t>(m_indices.graphicsFamily)};
+    if(m_indices.transferAvailable())
+    {
+        meshTransferMemoryPoolIndices.push_back(static_cast<uint32_t>(m_indices.transferFamily));
+    }
+    if(m_meshTransferMemoryPool.allocatePool(m_logicalDevice,
+                                             12 * 1 << 20,
+                                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                               VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                             m_memoryProperties,
+                                             meshTransferMemoryPoolIndices) != MemoryOperationResult::Success)
+    {
+        THROW(std::runtime_error("Could not allocate memory pool"));
+    }
 }
-
-void Engine::createVertexIndexBuffer()
+void Engine::createVertexAndIndexBuffer()
 {
-    LOG_INFO("Creating and Allocating Index Buffer");
-    VkDeviceSize bufferSize = sizeof(m_mesh.faces[0]) * m_mesh.faces.size();
-    VkBufferUsageFlags usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
+    LOG_INFO("Creating and Allocating Vertex and Index Buffer");
+    const auto vertexBufferSize = sizeof(m_mesh.vertices[0]) * m_mesh.vertices.size();
+    m_meshData.vertexBuffer = m_meshMemoryPool.createResource(vertexBufferSize);
+    const auto indexBufferSize = sizeof(m_mesh.faces[0]) * m_mesh.faces.size();
+    m_meshData.indexBuffer = m_meshMemoryPool.createResource(indexBufferSize);
 
-    utils::createBuffer(m_logicalDevice,
-                        m_indices,
-                        bufferSize,
-                        usage,
-                        properties,
-                        m_memoryProperties,
-                        stagingBuffer,
-                        stagingBufferMemory);
+    if(m_meshData.vertexBuffer == PRISMO_NULL_HANDLE || m_meshData.indexBuffer == PRISMO_NULL_HANDLE)
+    {
+        THROW(std::runtime_error("Mesh resource creation failed!"));
+    }
 
-    void* pData; // Contains a pointer to the mapped memory
+    std::array<MemoryPoolResource, 2> meshTransferResources{};
+    meshTransferResources[0] = m_meshTransferMemoryPool.createResource(vertexBufferSize);
+    meshTransferResources[1] = m_meshTransferMemoryPool.createResource(indexBufferSize);
 
-    // Documentation : memory must have been created with a memory type that reports VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-    //                  flags is reserved for future use of the vulkanAPI.
-    vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, bufferSize, 0, &pData);
-    memcpy(pData, m_mesh.faces.data(), static_cast<size_t>(bufferSize));
-    vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
+    if(meshTransferResources[0] == PRISMO_NULL_HANDLE || meshTransferResources[1] == PRISMO_NULL_HANDLE)
+    {
+        THROW(std::runtime_error("Mesh resource creation failed!"));
+    }
 
-    utils::createBuffer(m_logicalDevice,
-                        m_indices,
-                        bufferSize,
-                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        m_memoryProperties,
-                        m_meshData.indexBuffer,
-                        m_meshData.indexBufferMemory);
-    utils::copyBuffer(m_logicalDevice,
-                      getCommandPoolTransfer(),
-                      getTransfertQueue(),
-                      stagingBuffer,
-                      m_meshData.indexBuffer,
-                      bufferSize);
+    memcpy(
+      m_meshTransferMemoryPool.pointerToResource(meshTransferResources[0]), m_mesh.vertices.data(), vertexBufferSize);
+    memcpy(m_meshTransferMemoryPool.pointerToResource(meshTransferResources[1]), m_mesh.faces.data(), indexBufferSize);
 
-    vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
-    vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
+    std::array<MemoryPoolResource, 2> meshResources{m_meshData.vertexBuffer, m_meshData.indexBuffer};
+
+    copyMemoryPoolResourceToMemoryPool(m_logicalDevice,
+                                       getCommandPoolTransfer(),
+                                       getTransfertQueue(),
+                                       m_meshTransferMemoryPool,
+                                       meshTransferResources.cbegin(),
+                                       meshTransferResources.cend(),
+                                       m_meshMemoryPool,
+                                       meshResources.cbegin());
+
+    m_meshTransferMemoryPool.destroyResource(meshTransferResources[0]);
+    m_meshTransferMemoryPool.destroyResource(meshTransferResources[1]);
+    LOG_INFO("Vertex Buffer Created");
     LOG_INFO("Index Buffer Created");
 }
 
@@ -1147,12 +1130,6 @@ void Engine::createSecondaryCommandBuffers()
         {
             vkCmdSetViewport(m_commandBufferSecondary[i], 0, 1, &m_viewport);
             vkCmdBindPipeline(m_commandBufferSecondary[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-
-            VkBuffer vertexBuffers[] = {m_meshData.vertexBuffer};
-            VkDeviceSize offsets[] = {0};
-            vkCmdBindVertexBuffers(m_commandBufferSecondary[i], 0, 1, vertexBuffers, offsets);
-
-            vkCmdBindIndexBuffer(m_commandBufferSecondary[i], m_meshData.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdBindDescriptorSets(m_commandBufferSecondary[i],
                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_pipelineLayout,
@@ -1162,8 +1139,22 @@ void Engine::createSecondaryCommandBuffers()
                                     0,
                                     nullptr);
 
+            VkBuffer vertexBuffers[] = {m_meshMemoryPool.buffer()};
+            VkDeviceSize offsets[] = {m_meshData.vertexBuffer->offset};
+            vkCmdBindVertexBuffers(m_commandBufferSecondary[i], 0, 1, vertexBuffers, offsets);
+
+            vkCmdBindIndexBuffer(m_commandBufferSecondary[i],
+                                 m_meshMemoryPool.buffer(),
+                                 m_meshData.indexBuffer->offset,
+                                 VK_INDEX_TYPE_UINT32);
+
             // 1 used for the instanced rendering could be higher i think for multiple instanced
-            vkCmdDrawIndexed(m_commandBufferSecondary[i], static_cast<uint32_t>(m_mesh.faces.size() * 3), 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBufferSecondary[i],
+                             static_cast<uint32_t>(m_meshData.indexBuffer->size / sizeof(VertexIndex)),
+                             1,
+                             0,
+                             0,
+                             0);
         }
         VK_CALL(vkEndCommandBuffer(m_commandBufferSecondary[i]));
     }
@@ -1399,10 +1390,8 @@ void Engine::cleanup()
         }
 
         // Mesh data
-        vkDestroyBuffer(m_logicalDevice, m_meshData.vertexBuffer, nullptr);
-        vkFreeMemory(m_logicalDevice, m_meshData.vertexBufferMemory, nullptr);
-        vkDestroyBuffer(m_logicalDevice, m_meshData.indexBuffer, nullptr);
-        vkFreeMemory(m_logicalDevice, m_meshData.indexBufferMemory, nullptr);
+        m_meshMemoryPool.deallocatePool(m_logicalDevice);
+        m_meshTransferMemoryPool.deallocatePool(m_logicalDevice);
 
         // Semaphores
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)

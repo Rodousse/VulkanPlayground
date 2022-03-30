@@ -5,6 +5,8 @@ set(ENGINE_SRC
   engine/descriptor.cpp
   engine/Engine.cpp
   engine/Mesh.cpp
+  engine/MemoryPool.cpp
+  engine/memoryUtils.cpp
   engine/PerspectiveCamera.cpp
   engine/PhysicalDeviceProperties.cpp
   engine/utils.cpp)
@@ -18,8 +20,11 @@ set(ENGINE_HEADERS
   engine/Engine.hpp
   engine/Logger.hpp
   engine/Mesh.hpp
+  engine/MemoryPool.hpp
+  engine/memoryUtils.hpp
   engine/PerspectiveCamera.hpp
   engine/PhysicalDeviceProperties.hpp
+  engine/typeDefinition.hpp
   engine/utils.hpp)
 
 add_library(engine SHARED ${ENGINE_SRC} ${ENGINE_HEADERS})

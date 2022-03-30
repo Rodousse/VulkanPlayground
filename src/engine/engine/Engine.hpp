@@ -2,6 +2,7 @@
 #include "engine/Camera.hpp"
 #include "engine/CommonTypes.hpp"
 #include "engine/DebugMessenger.hpp"
+#include "engine/MemoryPool.hpp"
 #include "engine/Mesh.hpp"
 #include "engine/PhysicalDeviceProperties.hpp"
 
@@ -54,11 +55,11 @@ class Engine
 
     struct MeshData
     {
-        VkBuffer vertexBuffer;
-        VkDeviceMemory vertexBufferMemory;
-        VkBuffer indexBuffer;
-        VkDeviceMemory indexBufferMemory;
+        MemoryPoolResource vertexBuffer;
+        MemoryPoolResource indexBuffer;
     } m_meshData;
+    MemoryPool m_meshMemoryPool;
+    MemoryPool m_meshTransferMemoryPool;
 
     const std::vector<const char*> DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
@@ -172,8 +173,8 @@ class Engine
 
     // Buffer Management
 
-    void createVertexBuffer();
-    void createVertexIndexBuffer();
+    void createMemoryPools();
+    void createVertexAndIndexBuffer();
     void createUniformBuffer();
     void updateUniformBuffer(uint32_t imageIndex);
 
